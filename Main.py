@@ -1,7 +1,11 @@
 # main.py
-from PySide6.QtCore import QSettings
+
+from PySide6.QtCore import QSettings, QTimer
+
 import os
 import sys
+import time
+
 from datetime import datetime
 
 from PySide6.QtWidgets import (
@@ -47,6 +51,16 @@ class UITextZH:
 
     JUMP_TO_MONITOR = "跳转到实时监测页，电池"
 
+    DIAG_OVER_TEMP = "严重过温"
+
+    DIAG_HIGH_TEMP = "高温预警"
+
+    DIAG_LOW_SOC = "SOC过低"
+
+    DIAG_LOW_SOH = "SOH过低"
+
+    DIAG_SYSTEM_OK = "系统正常"
+
 
 # =========================================================
 # English
@@ -71,6 +85,16 @@ class UITextEN:
     CAN_INIT_FAILED = "CAN initialization failed"
 
     JUMP_TO_MONITOR = "Jump to monitor page, battery"
+
+    DIAG_OVER_TEMP = "Critical Over Temperature"
+
+    DIAG_HIGH_TEMP = "High Temperature Warning"
+
+    DIAG_LOW_SOC = "Low SOC"
+
+    DIAG_LOW_SOH = "Low SOH"
+
+    DIAG_SYSTEM_OK = "System OK"
 
 
 class MainWindow(QWidget):
@@ -156,7 +180,6 @@ class MainWindow(QWidget):
 
         # =====================================================
         # 初始化页面语言
-        # （不要依赖 signal 初始化）
         # =====================================================
 
         self.switch_language(
@@ -166,11 +189,19 @@ class MainWindow(QWidget):
         # =====================================================
         # 信号
         # =====================================================
-        self.bootloader_page.starting_flash.connect(self.stop_can_for_flash)
-        self.bootloader_page.finished_flash.connect(self.restart_can_after_flash)
+
+        self.bootloader_page.starting_flash.connect(
+            self.stop_can_for_flash
+        )
+
+        self.bootloader_page.finished_flash.connect(
+            self.restart_can_after_flash
+        )
+
         self.overall_page.cellClicked.connect(
             self.jump_to_single_monitor
         )
+
         self.setting_page.reconnect_requested.connect(
             self.reconnect_can
         )
@@ -183,14 +214,34 @@ class MainWindow(QWidget):
         self.can_receiver = None
 
         # =====================================================
+        # UI刷新限频
+        # =====================================================
+
+        self.last_history_update = 0
+
+        self.ui_refresh_timer = QTimer()
+
+        self.ui_refresh_timer.timeout.connect(
+            self.refresh_ui
+        )
+
+        # 5FPS
+        self.ui_refresh_timer.start(200)
+
+        self.chart_refresh_timer = QTimer()
+
+        self.chart_refresh_timer.timeout.connect(
+            self.refresh_chart
+        )
+
+        # 趋势图 1FPS
+        self.chart_refresh_timer.start(1000)
+
+        # =====================================================
         # 初始化 CAN
         # =====================================================
 
         try:
-
-            # =====================================================
-            # 读取历史 CAN 配置
-            # =====================================================
 
             settings = QSettings(
                 "BatteryMonitor",
@@ -223,10 +274,6 @@ class MainWindow(QWidget):
                 )
             )
 
-            # =====================================================
-            # 创建 CANReceiver
-            # =====================================================
-
             self.can_receiver = CANReceiver(
                 app_name=app_name,
                 channel=channel,
@@ -251,7 +298,9 @@ class MainWindow(QWidget):
                 f"{self.current_text.CAN_INIT_FAILED}: {e}"
             )
 
-            self.overall_page.data.connection_status = "offline"
+            self.overall_page.data.connection_status = (
+                "offline"
+            )
 
             self.overall_page.update_display()
 
@@ -262,19 +311,19 @@ class MainWindow(QWidget):
     def switch_language(self, language):
 
         if language == "en":
+
             self.current_text = UITextEN
+
         else:
+
             self.current_text = UITextZH
 
         self.update_ui_text()
 
-        # 通知单体监测页面
         self.single_page.switch_language(language)
 
-        # 通知 Bootloader 页面
         self.bootloader_page.switch_language(language)
 
-        # 通知整体页面
         self.overall_page.switch_language(language)
 
     # =========================================================
@@ -308,35 +357,95 @@ class MainWindow(QWidget):
         )
 
     # =========================================================
+    # 低频刷新UI
+    # =========================================================
+
+    def refresh_ui(self):
+
+        try:
+
+            self.overall_page.update_display()
+
+            self.overall_page.update_all_matrices()
+
+        except Exception as e:
+
+            print(f"UI刷新错误: {e}")
+
+    # =========================================================
+    # 低频刷新趋势图
+    # =========================================================
+
+    def refresh_chart(self):
+
+        try:
+
+            self.overall_page.update_trend_chart()
+
+        except Exception as e:
+
+            print(f"趋势图刷新错误: {e}")
+
+    # =========================================================
     # Bootloader 刷写前后 CAN 处理
     # =========================================================
 
     def stop_can_for_flash(self):
-        """停止 CANReceiver，为刷写释放 Vector 通道"""
+
         if self.can_receiver:
+
             self.can_receiver.stop()
+
             self.can_receiver = None
+
             print("CAN 接收已停止，为刷写释放资源")
 
     def restart_can_after_flash(self, success):
-        """刷写完成后重新初始化 CANReceiver"""
+
         if success:
-            dbc_path = os.path.join(os.path.dirname(__file__), "System3.dbc")
+
+            dbc_path = os.path.join(
+                os.path.dirname(__file__),
+                "System3.dbc"
+            )
+
             try:
-                self.can_receiver = CANReceiver(dbc_path=dbc_path)
-                self.can_receiver.data_updated.connect(self.on_can_data_updated)
-                self.can_receiver.message_received.connect(self.on_can_message_received)
-                self.overall_page.data.connection_status = "connected"
-                self.overall_page.update_display()
-                print("CANReceiver 已重新初始化")
-            except Exception as e:
-                print(f"{self.current_text.CAN_INIT_FAILED}: {e}")
-                self.overall_page.data.connection_status = "offline"
+
+                self.can_receiver = CANReceiver(
+                    dbc_path=dbc_path
+                )
+
+                self.can_receiver.data_updated.connect(
+                    self.on_can_data_updated
+                )
+
+                self.can_receiver.message_received.connect(
+                    self.on_can_message_received
+                )
+
+                self.overall_page.data.connection_status = (
+                    "connected"
+                )
+
                 self.overall_page.update_display()
 
- # =========================================================
- # CAN 数据更新
- # =========================================================
+                print("CANReceiver 已重新初始化")
+
+            except Exception as e:
+
+                print(
+                    f"{self.current_text.CAN_INIT_FAILED}: {e}"
+                )
+
+                self.overall_page.data.connection_status = (
+                    "offline"
+                )
+
+                self.overall_page.update_display()
+
+    # =========================================================
+    # CAN 数据更新
+    # =========================================================
 
     def on_can_data_updated(self, signal_dict):
 
@@ -365,7 +474,7 @@ class MainWindow(QWidget):
             updated = True
 
         # =====================================================
-        # 原始 Pack SOC / SOH
+        # SOC / SOH
         # =====================================================
 
         if 'PackSOC' in signal_dict:
@@ -374,6 +483,8 @@ class MainWindow(QWidget):
                 signal_dict['PackSOC'],
                 1
             )
+
+            data.total_soc_percent = data.pack_soc
 
             updated = True
 
@@ -384,10 +495,12 @@ class MainWindow(QWidget):
                 1
             )
 
+            data.total_soh_percent = data.pack_soh
+
             updated = True
 
         # =====================================================
-        # EIS 修正后的 SOC / SOH
+        # EIS
         # =====================================================
 
         if 'EISPackSOC' in signal_dict:
@@ -407,7 +520,7 @@ class MainWindow(QWidget):
             updated = True
 
         # =====================================================
-        # 累计充放电容量
+        # 容量
         # =====================================================
 
         if 'BatSumChrgCap' in signal_dict:
@@ -503,12 +616,107 @@ class MainWindow(QWidget):
             updated = True
 
         # =====================================================
-        # 自动刷新
+        # 26节单体 SoC
+        # =====================================================
+
+        for i in range(26):
+
+            signal_name = f"CellSOC{i + 1}"
+
+            if signal_name in signal_dict:
+
+                data.cell_soc[i] = int(
+                    signal_dict[signal_name]
+                )
+
+                updated = True
+
+        # =====================================================
+        # 26节单体温度
+        # =====================================================
+
+        for i in range(26):
+
+            signal_name = f"CellTemp{i + 1}"
+
+            if signal_name in signal_dict:
+
+                data.cell_temp[i] = round(
+                    signal_dict[signal_name],
+                    1
+                )
+
+                updated = True
+
+        # =====================================================
+        # 26节单体电压
+        # =====================================================
+
+        for i in range(26):
+
+            signal_name = f"CellVoltage{i + 1}"
+
+            if signal_name in signal_dict:
+
+                data.cell_volt[i] = round(
+                    signal_dict[signal_name] / 1000.0,
+                    3
+                )
+
+                updated = True
+
+        # =====================================================
+        # 自动诊断
+        # =====================================================
+
+        try:
+
+            max_temp = max(data.cell_temp)
+
+            min_soc = min(data.cell_soc)
+
+            if max_temp >= 60:
+
+                data.overall_diagnosis = (
+                    self.current_text.DIAG_OVER_TEMP
+                )
+
+            elif max_temp >= 50:
+
+                data.overall_diagnosis = (
+                    self.current_text.DIAG_HIGH_TEMP
+                )
+
+            elif min_soc <= 10:
+
+                data.overall_diagnosis = (
+                    self.current_text.DIAG_LOW_SOC
+                )
+
+            elif data.pack_soh <= 80:
+
+                data.overall_diagnosis = (
+                    self.current_text.DIAG_LOW_SOH
+                )
+
+            else:
+
+                data.overall_diagnosis = (
+                    self.current_text.DIAG_SYSTEM_OK
+                )
+
+        except Exception:
+
+            pass
+
+        # =====================================================
+        # 数据更新（不直接刷新UI）
         # =====================================================
 
         if updated:
-            # 修改：收到第一条有效数据后，将连接状态设为“已连接”
+
             if data.connection_status != "connected":
+
                 data.connection_status = "connected"
 
             data.recalculate_statistics()
@@ -517,13 +725,14 @@ class MainWindow(QWidget):
                 "%Y-%m-%d %H:%M:%S"
             )
 
-            data.add_current_to_history()
+            # 趋势记录限频
+            now = time.time()
 
-            self.overall_page.update_display()
+            if now - self.last_history_update >= 1.0:
 
-            self.overall_page.update_all_matrices()
+                data.add_current_to_history()
 
-            self.overall_page.update_trend_chart()
+                self.last_history_update = now
 
     # =========================================================
     # CAN 报文接收
@@ -550,7 +759,8 @@ class MainWindow(QWidget):
         )
 
         print(
-            f"{self.current_text.JUMP_TO_MONITOR}: {battery_name}"
+            f"{self.current_text.JUMP_TO_MONITOR}: "
+            f"{battery_name}"
         )
 
     # =========================================================
@@ -560,9 +770,14 @@ class MainWindow(QWidget):
     def closeEvent(self, event):
 
         if self.can_receiver:
+
             self.can_receiver.stop()
 
         super().closeEvent(event)
+
+    # =========================================================
+    # CAN 重连
+    # =========================================================
 
     def reconnect_can(
             self,
@@ -574,11 +789,8 @@ class MainWindow(QWidget):
 
         print("开始重新连接 CAN...")
 
-        # =============================================
-        # 停止旧连接
-        # =============================================
-
         if self.can_receiver:
+
             self.can_receiver.stop()
 
             self.can_receiver = None
@@ -587,10 +799,6 @@ class MainWindow(QWidget):
             os.path.dirname(__file__),
             "System3.dbc"
         )
-
-        # =============================================
-        # 创建新连接
-        # =============================================
 
         try:
 

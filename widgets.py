@@ -303,20 +303,14 @@ class BatteryCell(QWidget):
         text_rect = self.rect().adjusted(0, 22, 0, 0)
         p.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, str(self.index))
 
-class TrendChartWidget(QWidget):
-    """上下两个独立折线图：SoC 和 SoH（极简放大版）"""
+from collections import deque
 
-    # =====================================================
-    # 中文
-    # =====================================================
+class TrendChartWidget(QWidget):
+    """上下两个独立折线图：SoC 和 SoH（FIFO滚动版）"""
 
     class UITextZH:
         SOC_CURVE = "SoC状态曲线"
         SOH_CURVE = "SoH状态曲线"
-
-    # =====================================================
-    # 英文
-    # =====================================================
 
     class UITextEN:
         SOC_CURVE = "SoC Trend"
@@ -326,336 +320,166 @@ class TrendChartWidget(QWidget):
         super().__init__()
 
         import pyqtgraph as pg
+        from PySide6.QtCore import Qt
+        from collections import deque
 
         self.ui_text = self.UITextZH
+        self.first_update = True
 
-        # 全局风格
+        # =========================
+        # ✔ FIFO缓存（关键）
+        # =========================
+        self.max_len = 200
+        self.soc_buffer = deque(maxlen=self.max_len)
+        self.soh_buffer = deque(maxlen=self.max_len)
+
+        self.x_index = 0
+
         pg.setConfigOption("foreground", "k")
         pg.setConfigOption("background", "w")
 
-        # 主布局
         self.layout = QVBoxLayout(self)
-
-        self.layout.setContentsMargins(
-            0,
-            0,
-            0,
-            0
-        )
-
+        self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(1)
 
-        # =================================================
-        # SoC
-        # =================================================
-
-        self.label_soc = QLabel(
-            self.ui_text.SOC_CURVE
-        )
-
-        self.label_soc.setAlignment(
-            Qt.AlignCenter
-        )
-
+        # =========================================================
+        # ✔ SoC
+        # =========================================================
+        self.label_soc = QLabel(self.ui_text.SOC_CURVE)
+        self.label_soc.setAlignment(Qt.AlignCenter)
         self.label_soc.setStyleSheet("""
             font-weight: bold;
             font-size: 11px;
             margin: 0;
             padding: 0;
         """)
-
-        self.layout.addWidget(
-            self.label_soc
-        )
+        self.layout.addWidget(self.label_soc)
 
         self.soc_plot = pg.PlotWidget()
+        self.soc_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.soc_plot.showGrid(x=True, y=True, alpha=0.2)
 
-        self.soc_plot.setSizePolicy(
-            QSizePolicy.Expanding,
-            QSizePolicy.Expanding
-        )
-
-        # 网格
-        self.soc_plot.showGrid(
-            x=True,
-            y=True,
-            alpha=0.2
-        )
-
-        # 边框
-        self.soc_plot.getPlotItem().getViewBox().setBorder(
-            pg.mkPen("#D0D0D0")
-        )
-
-        # 删除标题但保留坐标轴
         self.soc_plot.setLabel("left", "")
         self.soc_plot.setLabel("bottom", "")
 
-        # 坐标轴样式
-        self.soc_plot.getAxis("bottom").setStyle(
-            tickTextOffset=2
-        )
+        self.soc_plot.getAxis("left").setTicks([[
+            (0, "0%"), (20, "20%"), (40, "40%"),
+            (60, "60%"), (80, "80%"), (100, "100%")
+        ]])
 
-        self.soc_plot.getAxis("left").setStyle(
-            tickTextOffset=2,
-            autoExpandTextSpace=False
-        )
+        self.soc_plot.setYRange(0, 101)
 
-        # Y轴百分号
-        self.soc_plot.getAxis("left").setTicks([
-            [
-                (0, "0%"),
-                (20, "20%"),
-                (40, "40%"),
-                (60, "60%"),
-                (80, "80%"),
-                (100, "100%")
-            ]
-        ])
+        vb_soc = self.soc_plot.getViewBox()
 
-        # 去边距
-        self.soc_plot.getPlotItem().layout.setContentsMargins(
-            0,
-            0,
-            0,
-            0
-        )
+        vb_soc.setMouseEnabled(x=True, y=False)
+        vb_soc.enableAutoRange(axis='x', enable=True)
+        vb_soc.enableAutoRange(axis='y', enable=False)
 
-        self.soc_plot.getPlotItem().setContentsMargins(
-            0,
-            0,
-            0,
-            0
-        )
+        # ✔ 强制锁死Y轴（关键）
+        vb_soc.setYRange(0, 101, padding=0)
+        vb_soc.setLimits(xMin=0, yMin=0, yMax=101)
 
-        # 锁定 Y 轴
-        self.soc_plot.setYRange(0, 100)
+        self.soc_curve = self.soc_plot.plot([], [], pen=pg.mkPen("#3498DB", width=2))
+        self.layout.addWidget(self.soc_plot, 1)
 
-        self.soc_plot.setLimits(
-            yMin=0,
-            yMax=100,
-            minYRange=100,
-            maxYRange=100,
-            xMin=0
-        )
-
-        # 禁止 Y 轴缩放
-        self.soc_plot.getViewBox().setMouseEnabled(
-            x=True,
-            y=False
-        )
-
-        # 曲线
-        self.soc_curve = self.soc_plot.plot(
-            [],
-            [],
-            pen=pg.mkPen("#3498DB", width=2)
-        )
-
-        self.layout.addWidget(
-            self.soc_plot,
-            1
-        )
-
-        # =================================================
-        # SoH
-        # =================================================
-
-        self.label_soh = QLabel(
-            self.ui_text.SOH_CURVE
-        )
-
-        self.label_soh.setAlignment(
-            Qt.AlignCenter
-        )
-
+        # =========================================================
+        # ✔ SoH
+        # =========================================================
+        self.label_soh = QLabel(self.ui_text.SOH_CURVE)
+        self.label_soh.setAlignment(Qt.AlignCenter)
         self.label_soh.setStyleSheet("""
             font-weight: bold;
             font-size: 11px;
             margin: 0;
             padding: 0;
         """)
-
-        self.layout.addWidget(
-            self.label_soh
-        )
+        self.layout.addWidget(self.label_soh)
 
         self.soh_plot = pg.PlotWidget()
+        self.soh_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.soh_plot.showGrid(x=True, y=True, alpha=0.2)
 
-        self.soh_plot.setSizePolicy(
-            QSizePolicy.Expanding,
-            QSizePolicy.Expanding
-        )
-
-        # 网格
-        self.soh_plot.showGrid(
-            x=True,
-            y=True,
-            alpha=0.2
-        )
-
-        # 边框
-        self.soh_plot.getPlotItem().getViewBox().setBorder(
-            pg.mkPen("#D0D0D0")
-        )
-
-        # 删除标题但保留坐标轴
         self.soh_plot.setLabel("left", "")
         self.soh_plot.setLabel("bottom", "")
 
-        # 坐标轴样式
-        self.soh_plot.getAxis("bottom").setStyle(
-            tickTextOffset=2
-        )
+        self.soh_plot.getAxis("left").setTicks([[
+            (0, "0%"), (20, "20%"), (40, "40%"),
+            (60, "60%"), (80, "80%"), (100, "100%")
+        ]])
 
-        self.soh_plot.getAxis("left").setStyle(
-            tickTextOffset=2,
-            autoExpandTextSpace=False
-        )
+        self.soh_plot.setYRange(0, 101)
 
-        # Y轴百分号
-        self.soh_plot.getAxis("left").setTicks([
-            [
-                (0, "0%"),
-                (20, "20%"),
-                (40, "40%"),
-                (60, "60%"),
-                (80, "80%"),
-                (100, "100%")
-            ]
-        ])
+        vb_soh = self.soh_plot.getViewBox()
 
-        # 去边距
-        self.soh_plot.getPlotItem().layout.setContentsMargins(
-            0,
-            0,
-            0,
-            0
-        )
+        vb_soh.setMouseEnabled(x=True, y=False)
+        vb_soh.enableAutoRange(axis='x', enable=True)
+        vb_soh.enableAutoRange(axis='y', enable=False)
 
-        self.soh_plot.getPlotItem().setContentsMargins(
-            0,
-            0,
-            0,
-            0
-        )
+        # ✔ 强制锁死Y轴（关键）
+        vb_soh.setYRange(0, 101, padding=0)
+        vb_soh.setLimits(xMin=0, yMin=0, yMax=101)
 
-        # 锁定 Y 轴
-        self.soh_plot.setYRange(0, 100)
-
-        self.soh_plot.setLimits(
-            yMin=0,
-            yMax=100,
-            minYRange=100,
-            maxYRange=100,
-            xMin=0
-        )
-
-        # 禁止 Y 轴缩放
-        self.soh_plot.getViewBox().setMouseEnabled(
-            x=True,
-            y=False
-        )
-
-        # 曲线
-        self.soh_curve = self.soh_plot.plot(
-            [],
-            [],
-            pen=pg.mkPen("#2ECC71", width=2)
-        )
-
-        self.layout.addWidget(
-            self.soh_plot,
-            1
-        )
-
-    # =====================================================
-    # 语言切换
-    # =====================================================
+        self.soh_curve = self.soh_plot.plot([], [], pen=pg.mkPen("#2ECC71", width=2))
+        self.layout.addWidget(self.soh_plot, 1)
 
     def switch_language(self, language="zh"):
-
         if language == "en":
-
             self.ui_text = self.UITextEN
-
         else:
-
             self.ui_text = self.UITextZH
 
         self.retranslate_ui()
 
-    # =====================================================
-    # 刷新文本
-    # =====================================================
-
     def retranslate_ui(self):
+        self.label_soc.setText(self.ui_text.SOC_CURVE)
+        self.label_soh.setText(self.ui_text.SOH_CURVE)
+    # =========================
+    # 更新数据（FIFO滚动核心）
+    # =========================
+    def update_data(self, soc_history, soh_history, max_history_len=200):
 
-        self.label_soc.setText(
-            self.ui_text.SOC_CURVE
-        )
+        # =========================
+        # FIFO（200条）
+        # =========================
+        if len(soc_history) > 0:
+            self.soc_buffer.append(soc_history[-1])
 
-        self.label_soh.setText(
-            self.ui_text.SOH_CURVE
-        )
+        if len(soh_history) > 0:
+            self.soh_buffer.append(soh_history[-1])
 
-    # =====================================================
-    # 更新数据
-    # =====================================================
+        soc_data = list(self.soc_buffer)
+        soh_data = list(self.soh_buffer)
 
-    def update_data(
-            self,
-            soc_history,
-            soh_history,
-            max_history_len=20
-    ):
-        """更新图表数据"""
+        # =========================
+        # ✔ 关键修复：X轴固定窗口（0~N）
+        # =========================
+        x_soc = list(range(len(soc_data)))
+        x_soh = list(range(len(soh_data)))
 
-        # SoC
-        x_soc = list(range(len(soc_history)))
+        self.soc_curve.setData(x_soc, soc_data)
+        self.soh_curve.setData(x_soh, soh_data)
 
-        self.soc_curve.setData(
-            x_soc,
-            soc_history
-        )
+        # =========================
+        # ✔ 自动滚动窗口（关键）
+        # =========================
+        if len(soc_data) >= self.max_len:
+            self.soc_plot.setXRange(
+                len(soc_data) - self.max_len,
+                len(soc_data),
+                padding=0
+            )
 
-        # SoH
-        x_soh = list(range(len(soh_history)))
+            self.soh_plot.setXRange(
+                len(soh_data) - self.max_len,
+                len(soh_data),
+                padding=0
+            )
 
-        self.soh_curve.setData(
-            x_soh,
-            soh_history
-        )
+        # =========================
+        # 初始窗口
+        # =========================
+        if self.first_update:
+            self.soc_plot.setXRange(0, 20, padding=0)
+            self.soh_plot.setXRange(0, 20, padding=0)
 
-        max_len = max(
-            len(soc_history),
-            len(soh_history),
-            1
-        )
-
-        x_max = max(
-            max_history_len,
-            max_len
-        ) - 1
-
-        # X轴固定从0开始
-        self.soc_plot.setXRange(
-            0,
-            x_max,
-            padding=0
-        )
-
-        self.soh_plot.setXRange(
-            0,
-            x_max,
-            padding=0
-        )
-
-        # 强制限制 X轴 >= 0
-        self.soc_plot.setLimits(
-            xMin=0
-        )
-
-        self.soh_plot.setLimits(
-            xMin=0
-        )
+            self.first_update = False
