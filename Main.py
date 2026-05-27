@@ -1,5 +1,6 @@
 # main.py
-
+import can
+import can.interfaces.vector  # 显式导入，解决打包问题
 from PySide6.QtCore import QSettings, QTimer
 
 import os
@@ -25,7 +26,14 @@ from pages import (
 from can_receiver import CANReceiver
 
 from language_manager import language_manager
+import sys
+import os
 
+def resource_path(relative_path):
+    """兼容 PyInstaller"""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, relative_path)
+    return os.path.join(os.path.abspath("."), relative_path)
 
 # =========================================================
 # 中文文本
@@ -101,7 +109,9 @@ class MainWindow(QWidget):
 
     def __init__(self):
         super().__init__()
+        from PySide6.QtGui import QIcon
 
+        self.setWindowIcon(QIcon(resource_path("appicon.ico")))
         self.current_text = UITextZH
 
         settings = QSettings(
@@ -206,10 +216,7 @@ class MainWindow(QWidget):
             self.reconnect_can
         )
 
-        dbc_path = os.path.join(
-            os.path.dirname(__file__),
-            "System3.dbc"
-        )
+        dbc_path = resource_path("System3.dbc")
 
         self.can_receiver = None
 
@@ -404,10 +411,7 @@ class MainWindow(QWidget):
 
         if success:
 
-            dbc_path = os.path.join(
-                os.path.dirname(__file__),
-                "System3.dbc"
-            )
+            dbc_path = resource_path("System3.dbc")
 
             try:
 
@@ -608,10 +612,16 @@ class MainWindow(QWidget):
         # =====================================================
 
         if 'BMS_SoftVer' in signal_dict:
+            ver = int(signal_dict['BMS_SoftVer'])
 
-            data.software_version = (
-                f"v{int(signal_dict['BMS_SoftVer'])}"
-            )
+            # 防御一下范围
+            ver = max(0, min(ver, 256))
+
+            major = ver // 100
+            minor = (ver // 10) % 10
+            patch = ver % 10
+
+            data.software_version = f"v{major}.{minor}.{patch}"
 
             updated = True
 
@@ -795,10 +805,7 @@ class MainWindow(QWidget):
 
             self.can_receiver = None
 
-        dbc_path = os.path.join(
-            os.path.dirname(__file__),
-            "System3.dbc"
-        )
+        dbc_path = resource_path("System3.dbc")
 
         try:
 
