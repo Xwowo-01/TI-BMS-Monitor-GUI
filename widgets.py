@@ -1,5 +1,4 @@
 import numpy as np
-
 from PySide6.QtWidgets import QToolTip
 import math
 from PySide6.QtGui import QCursor
@@ -18,20 +17,15 @@ from PySide6.QtGui import QColor, QPainter
 class SnapScatterItem(pg.ScatterPlotItem):
     def __init__(self, x, y, fmt="x={:.2f}\ny={:.2f}", threshold=0.5):
         super().__init__(x=x, y=y, size=3, brush=pg.mkBrush("#2ECC71"))
-
         self.x = np.array(x)
         self.y = np.array(y)
         self.fmt = fmt
         self.threshold = threshold
-
         self.text = pg.TextItem(anchor=(0, 1))
-
         # ===== 字体 =====
         self.text.setFont(QFont("Arial", 10, QFont.Bold))
-
         # ===== 文字颜色 =====
         self.text.setColor(QColor("#222222"))
-
         # ===== 初始白底（占位）=====
         self.text.setHtml("""
             <div style="
@@ -42,18 +36,15 @@ class SnapScatterItem(pg.ScatterPlotItem):
             ">
             </div>
         """)
-
         self.text.hide()
 
     def hoverEvent(self, ev):
         if ev.isExit():
             self.text.hide()
             return
-
         pos = ev.pos()
         dist = np.hypot(self.x - pos.x(), self.y - pos.y())
         idx = np.argmin(dist)
-
         if dist[idx] < self.threshold:
             self.text.setHtml(f"""
                 <div style="
@@ -69,7 +60,6 @@ class SnapScatterItem(pg.ScatterPlotItem):
             self.text.show()
         else:
             self.text.hide()
-
 
 # ================= 圆环组件 =================
 class CircularGauge(QWidget):
@@ -94,10 +84,8 @@ class CircularGauge(QWidget):
     def paintEvent(self, _):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
-
         side = min(self.width(), self.height())
         center = QPoint(self.width() // 2, self.height() // 2)
-
         # 圆环绘制区域
         circleRect = QRect(
             center.x() - side // 2,
@@ -105,11 +93,9 @@ class CircularGauge(QWidget):
             side,
             side
         ).adjusted(15, 15, -15, -15)
-
         # ---------- 背景圆环 ----------
         painter.setPen(QPen(QColor("#DDDDDD"), 12))
         painter.drawEllipse(circleRect)
-
         # ---------- 带发光的圆弧 ----------
         color = QColor("#2ECC71") if self.value >= 70 else QColor("#F1C40F")
         pen = QPen(color, 12)
@@ -119,12 +105,10 @@ class CircularGauge(QWidget):
             90 * 16,
             int(-360 * self.value / 100) * 16
         )
-
         # 发光效果实现：沿圆弧采样，绘制小半透明圆叠加
         glow_radius = 12  # 发光半径
         steps = int(360 * self.value / 100)+12  # 圆弧采样点数
         start_angle = 95  # 逆时针从顶部开始
-
         for i in range(steps + 1):
             angle = math.radians(start_angle - i)
             # 圆环半径
@@ -139,7 +123,6 @@ class CircularGauge(QWidget):
             painter.setBrush(QBrush(gradient))
             painter.setPen(Qt.NoPen)
             painter.drawEllipse(QPointF(x, y), glow_radius, glow_radius)
-
         # ---------- 文本 ----------
         textRect = QRect(
             center.x() - side // 2,
@@ -150,7 +133,6 @@ class CircularGauge(QWidget):
         painter.setPen(QColor("#222"))
         painter.setFont(QFont("Arial", int(side * 0.12), QFont.Bold))
         painter.drawText(textRect.adjusted(0, -int(side * 0.08), 0, 0), Qt.AlignCenter, f"{self.value} %")
-
         painter.setFont(QFont("Arial", int(side * 0.075)))
         # ★ 如果 subtitle 为空，则不显示 "/" 和副标题
         if self.subtitle:
@@ -163,22 +145,18 @@ class CircularGauge(QWidget):
             bottom_text
         )
 
-
 # ================= 单个电池图元（矮小+小凸起版） =================
 class BatteryCell(QWidget):
     clicked = Signal(str)
-
     def __init__(self, value, charging=False, mode="", name=""):
         super().__init__()
         self.value = value
         self.charging = charging
         self.mode = mode          # "SoC" / "Temp" / "Volt" / "SoH"
         self.name = name          # 例："1", "25"
-
         # 高度增加以放置底部编号
         self.setFixedSize(14, 32)
         self.setMouseTracking(True)
-
         # 提取数字编号（从名称中获取纯数字部分）
         try:
             num_str = ''.join(ch for ch in self.name if ch.isdigit())
@@ -214,10 +192,8 @@ class BatteryCell(QWidget):
     def paintEvent(self, _):
         p = QPainter(self)
         p.setRenderHint(QPainter.Antialiasing)
-
         # 颜色设定（依据《分布诊断.xlsx》）
         color = QColor("#2ECC71")   # 正常：绿色
-
         # ================= SoC =================
         if self.mode == "SoC":
             # 严重
@@ -229,7 +205,6 @@ class BatteryCell(QWidget):
             # 正常
             else:
                 color = QColor("#2ECC71")
-
         # ================= 温度 =================
         elif self.mode == "Temp":
             # 严重过温 >=55℃
@@ -246,7 +221,6 @@ class BatteryCell(QWidget):
                 color = QColor("#F39C12")
             else:
                 color = QColor("#2ECC71")
-
         # ================= 电压 =================
         elif self.mode == "Volt":
             # 单位 mV
@@ -274,17 +248,13 @@ class BatteryCell(QWidget):
                 color = QColor("#F39C12")
             else:
                 color = QColor("#2ECC71")
-
         # ---- 电池主体 ----
         p.setBrush(color)
         p.setPen(Qt.NoPen)
-
         # 主体矩形 (x=2, y=6, w=10, h=16)
         p.drawRoundedRect(2, 6, 10, 16, 2, 2)
-
         # 上方小凸起 (x=5, y=3, w=3, h=2)
         p.drawRoundedRect(5, 3, 3, 2, 1, 1)
-
         # ---- 充电闪电 (仅 SoC 模式) ----
         if self.charging and self.mode == "SoC":
             p.setPen(QPen(QColor("white"), 1))
@@ -294,7 +264,6 @@ class BatteryCell(QWidget):
             p.drawLine(5.5, 12, 9.5, 12)
             p.drawLine(8, 12, 7, 18)
             p.drawLine(9.5, 12, 7, 18)
-
         # ---- 底部数字编号 ----
         p.setPen(QColor(160, 160, 160))                # 浅灰色
         font = QFont("Arial", 7)
@@ -304,10 +273,8 @@ class BatteryCell(QWidget):
         p.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, str(self.index))
 
 from collections import deque
-
 class TrendChartWidget(QWidget):
     """上下两个独立折线图：SoC 和 SoH（FIFO滚动版）"""
-
     class UITextZH:
         SOC_CURVE = "SoC状态曲线"
         SOH_CURVE = "SoH状态曲线"
@@ -318,33 +285,22 @@ class TrendChartWidget(QWidget):
 
     def __init__(self, parent=None):
         super().__init__()
-
         import pyqtgraph as pg
         from PySide6.QtCore import Qt
         from collections import deque
-
         self.ui_text = self.UITextZH
         self.first_update = True
-
-        # =========================
         # ✔ FIFO缓存（关键）
-        # =========================
         self.max_len = 200
         self.soc_buffer = deque(maxlen=self.max_len)
         self.soh_buffer = deque(maxlen=self.max_len)
-
         self.x_index = 0
-
         pg.setConfigOption("foreground", "k")
         pg.setConfigOption("background", "w")
-
         self.layout = QVBoxLayout(self)
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(1)
-
-        # =========================================================
         # ✔ SoC
-        # =========================================================
         self.label_soc = QLabel(self.ui_text.SOC_CURVE)
         self.label_soc.setAlignment(Qt.AlignCenter)
         self.label_soc.setStyleSheet("""
@@ -354,37 +310,26 @@ class TrendChartWidget(QWidget):
             padding: 0;
         """)
         self.layout.addWidget(self.label_soc)
-
         self.soc_plot = pg.PlotWidget()
         self.soc_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.soc_plot.showGrid(x=True, y=True, alpha=0.2)
-
         self.soc_plot.setLabel("left", "")
         self.soc_plot.setLabel("bottom", "")
-
         self.soc_plot.getAxis("left").setTicks([[
             (0, "0%"), (20, "20%"), (40, "40%"),
             (60, "60%"), (80, "80%"), (100, "100%")
         ]])
-
         self.soc_plot.setYRange(0, 101)
-
         vb_soc = self.soc_plot.getViewBox()
-
         vb_soc.setMouseEnabled(x=True, y=False)
         vb_soc.enableAutoRange(axis='x', enable=True)
         vb_soc.enableAutoRange(axis='y', enable=False)
-
         # ✔ 强制锁死Y轴（关键）
         vb_soc.setYRange(0, 101, padding=0)
         vb_soc.setLimits(xMin=0, yMin=0, yMax=101)
-
         self.soc_curve = self.soc_plot.plot([], [], pen=pg.mkPen("#3498DB", width=2))
         self.layout.addWidget(self.soc_plot, 1)
-
-        # =========================================================
         # ✔ SoH
-        # =========================================================
         self.label_soh = QLabel(self.ui_text.SOH_CURVE)
         self.label_soh.setAlignment(Qt.AlignCenter)
         self.label_soh.setStyleSheet("""
@@ -394,31 +339,23 @@ class TrendChartWidget(QWidget):
             padding: 0;
         """)
         self.layout.addWidget(self.label_soh)
-
         self.soh_plot = pg.PlotWidget()
         self.soh_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.soh_plot.showGrid(x=True, y=True, alpha=0.2)
-
         self.soh_plot.setLabel("left", "")
         self.soh_plot.setLabel("bottom", "")
-
         self.soh_plot.getAxis("left").setTicks([[
             (0, "0%"), (20, "20%"), (40, "40%"),
             (60, "60%"), (80, "80%"), (100, "100%")
         ]])
-
         self.soh_plot.setYRange(0, 101)
-
         vb_soh = self.soh_plot.getViewBox()
-
         vb_soh.setMouseEnabled(x=True, y=False)
         vb_soh.enableAutoRange(axis='x', enable=True)
         vb_soh.enableAutoRange(axis='y', enable=False)
-
         # ✔ 强制锁死Y轴（关键）
         vb_soh.setYRange(0, 101, padding=0)
         vb_soh.setLimits(xMin=0, yMin=0, yMax=101)
-
         self.soh_curve = self.soh_plot.plot([], [], pen=pg.mkPen("#2ECC71", width=2))
         self.layout.addWidget(self.soh_plot, 1)
 
@@ -427,59 +364,39 @@ class TrendChartWidget(QWidget):
             self.ui_text = self.UITextEN
         else:
             self.ui_text = self.UITextZH
-
         self.retranslate_ui()
 
     def retranslate_ui(self):
         self.label_soc.setText(self.ui_text.SOC_CURVE)
         self.label_soh.setText(self.ui_text.SOH_CURVE)
-    # =========================
     # 更新数据（FIFO滚动核心）
-    # =========================
     def update_data(self, soc_history, soh_history, max_history_len=200):
-
-        # =========================
         # FIFO（200条）
-        # =========================
         if len(soc_history) > 0:
             self.soc_buffer.append(soc_history[-1])
-
         if len(soh_history) > 0:
             self.soh_buffer.append(soh_history[-1])
-
         soc_data = list(self.soc_buffer)
         soh_data = list(self.soh_buffer)
-
-        # =========================
         # ✔ 关键修复：X轴固定窗口（0~N）
-        # =========================
         x_soc = list(range(len(soc_data)))
         x_soh = list(range(len(soh_data)))
-
         self.soc_curve.setData(x_soc, soc_data)
         self.soh_curve.setData(x_soh, soh_data)
-
-        # =========================
         # ✔ 自动滚动窗口（关键）
-        # =========================
         if len(soc_data) >= self.max_len:
             self.soc_plot.setXRange(
                 len(soc_data) - self.max_len,
                 len(soc_data),
                 padding=0
             )
-
             self.soh_plot.setXRange(
                 len(soh_data) - self.max_len,
                 len(soh_data),
                 padding=0
             )
-
-        # =========================
         # 初始窗口
-        # =========================
         if self.first_update:
             self.soc_plot.setXRange(0, 20, padding=0)
             self.soh_plot.setXRange(0, 20, padding=0)
-
             self.first_update = False
