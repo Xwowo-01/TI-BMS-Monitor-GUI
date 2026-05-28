@@ -33,6 +33,7 @@ class UITextZH:
     TOTAL_DISCHARGE_CAPACITY = "总放电容量"
     # 诊断
     OVERALL_DIAGNOSIS = "整体诊断"
+    FAULT_LEVEL = "故障等级"
     # 整包
     PACK_SOC = "整包SOC"
     PACK_SOH = "整包SOH"
@@ -101,6 +102,7 @@ class UITextEN:
     TOTAL_DISCHARGE_CAPACITY = "Total Discharge Capacity"
     # 诊断
     OVERALL_DIAGNOSIS = "Overall Diagnosis"
+    FAULT_LEVEL = "Fault Level"
     # 整包
     PACK_SOC = "Pack SOC"
     PACK_SOH = "Pack SOH"
@@ -190,7 +192,8 @@ class OverallStatusData:
         self.soh_history: List[int] = []
         self.max_history_len = 20
         self.add_current_to_history()
-
+        self.fault_code = -1          # 故障码序号 (0-22)
+        self.fault_level = 0         # 故障等级 (0-3)
     # 统计
     def recalculate_statistics(self):
         valid_soc = [
@@ -268,6 +271,59 @@ class OverallStatusData:
 
 # 页面
 class OverallStatusPage(QWidget):
+    FAULT_DESC_ZH = {
+        0: "系统正常",
+        1: "单体电压过压",
+        2: "单体电压过压",
+        3: "单体电压过压",
+        4: "单体电压欠压",
+        5: "单体电压欠压",
+        6: "单体电压欠压",
+        7: "单体压差过大",
+        8: "单体压差过大",
+        9: "总电压过高",
+        10: "总电压过高",
+        11: "总电压过低",
+        12: "总电压过低",
+        13: "电池温度过高",
+        14: "电池温度过高",
+        15: "电池温度过低",
+        16: "电池温度过低",
+        17: "行车放电电流过大",
+        18: "行车放电电流过大",
+        19: "行车放电电流过大",
+        20: "SOC过低",
+        21: "SOC过低",
+        22: "SOC过低",
+    }
+    FAULT_DESC_EN = {
+        0: "System Normal",
+        1: "Cell Overvoltage",
+        2: "Cell Overvoltage",
+        3: "Cell Overvoltage",
+        4: "Cell Undervoltage",
+        5: "Cell Undervoltage",
+        6: "Cell Undervoltage",
+        7: "Cell Voltage Difference",
+        8: "Cell Voltage Difference",
+        9: "Total Voltage Over",
+        10: "Total Voltage Over",
+        11: "Total Voltage Under",
+        12: "Total Voltage Under",
+        13: "Battery Temp High",
+        14: "Battery Temp High",
+        15: "Battery Temp Low",
+        16: "Battery Temp Low",
+        17: "Discharge Current Over",
+        18: "Discharge Current Over",
+        19: "Discharge Current Over",
+        20: "Low SOC",
+        21: "Low SOC",
+        22: "Low SOC",
+    }
+    LEVEL_TEXT_ZH = {1: "轻微报警", 2: "一般报警", 3: "严重报警"}
+    LEVEL_TEXT_EN = {1: "Slight Alarm", 2: "General Alarm", 3: "Severe Alarm"}
+    LEVEL_COLOR = {1: "black", 2: "#d4af37", 3: "red"}
     cellClicked = Signal(str)
     def __init__(self):
         super().__init__()
@@ -280,7 +336,26 @@ class OverallStatusPage(QWidget):
         self.update_display()
         self.update_all_matrices()
         self.update_trend_chart()
+    def get_diagnosis_text(self):
+        if self.data.fault_code == -1:
+            return "--"
+        if self.ui_text == UITextEN:
+            desc = self.FAULT_DESC_EN.get(self.data.fault_code, "Unknown Fault")
+        else:
+            desc = self.FAULT_DESC_ZH.get(self.data.fault_code, "未知故障")
+        return desc
 
+    def get_fault_level_info(self):
+        """返回 (等级文本, 颜色) 元组，若无等级则返回 (None, None)"""
+        level = self.data.fault_level
+        if level == 0:
+            return None, None
+        if self.ui_text == UITextEN:
+            text = self.LEVEL_TEXT_EN.get(level, f"Level {level}")
+        else:
+            text = self.LEVEL_TEXT_ZH.get(level, f"等级{level}")
+        color = self.LEVEL_COLOR.get(level, "black")
+        return text, color
     # UI
     def _setup_ui(self):
         main = QHBoxLayout(self)
@@ -574,16 +649,20 @@ class OverallStatusPage(QWidget):
             f"<span style='color:black'>"
             f"{self.data.pack_soc} %</span>"
         )
-        self.total_soh_label.setText(
-            f"<span style='color:green'>"
-            f"{self.ui_text.OVERALL_DIAGNOSIS}：</span>"
-            f"<span style='color:black'>"
-            f"{self.data.overall_diagnosis}</span><br>"
-            f"<span style='color:green'>"
-            f"{self.ui_text.PACK_SOH}：</span>"
-            f"<span style='color:black'>"
-            f"{self.data.pack_soh} %</span>"
-        )
+
+        # === 修改开始 ===
+        diag_text = self.get_diagnosis_text()
+        level_text, level_color = self.get_fault_level_info()
+
+        diag_line = f"<span style='color:green'>{self.ui_text.OVERALL_DIAGNOSIS}：</span><span style='color:black'>{diag_text}</span>"
+        level_line = ""
+        if level_text:
+            level_line = f"<br><span style='color:green'>{self.ui_text.FAULT_LEVEL}：</span><span style='color:{level_color}'>{level_text}</span>"
+        soh_line = f"<br><span style='color:green'>{self.ui_text.PACK_SOH}：</span><span style='color:black'>{self.data.pack_soh} %</span>"
+
+        self.total_soh_label.setText(diag_line + level_line + soh_line)
+        # === 修改结束 ===
+
         self.temp_label.setText(
             f"<span style='color:green'>"
             f"{self.ui_text.TEMP_STAT}：</span><br>"

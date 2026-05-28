@@ -39,6 +39,10 @@ BU_: ApplicationECU TestECU
 BO_ 3221225472 VECTOR__INDEPENDENT_SIG_MSG: 0 Vector__XXX
  SG_ CellTemp24 : 0|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
 
+BO_ 442 CPU_UASGE: 8 ApplicationECU
+ SG_ CPUNum : 7|4@0+ (1,0) [0|3] "" Vector__XXX
+ SG_ CPU_USE : 3|8@0+ (1,0) [0|100] "%" Vector__XXX
+
 BO_ 515 BMS_01: 8 ApplicationECU
  SG_ BMS_State : 7|4@0+ (1,0) [0|15] "enum" Vector__XXX
 
@@ -69,31 +73,31 @@ BO_ 420 BMS_05: 8 ApplicationECU
  SG_ BMS_HwVer : 23|16@0+ (1,0) [0|255] "" Vector__XXX
 
 BO_ 432 BMS_CellTemp: 32 ApplicationECU
- SG_ CellTemp9 : 103|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp8 : 95|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp7 : 87|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp6 : 79|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp5 : 71|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp4 : 63|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp3 : 55|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp26 : 239|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp25 : 231|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp24 : 223|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp23 : 215|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp22 : 207|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp21 : 199|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp20 : 191|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp19 : 183|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp18 : 175|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp17 : 167|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp16 : 159|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp15 : 151|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp14 : 143|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp13 : 135|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp12 : 127|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp11 : 119|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp10 : 111|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
- SG_ CellTemp2 : 47|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp9 : 103|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp8 : 95|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp7 : 87|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp6 : 79|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp5 : 71|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp4 : 63|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp3 : 55|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp26 : 239|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp25 : 231|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp24 : 223|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp23 : 215|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp22 : 207|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp21 : 199|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp20 : 191|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp19 : 183|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp18 : 175|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp17 : 167|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp16 : 159|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp15 : 151|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp14 : 143|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp13 : 135|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp12 : 127|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp11 : 119|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp10 : 111|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
+ SG_ CellTemp2 : 47|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
  SG_ CellTemp1 : 39|8@0+ (0.5,-30) [-30|80] "¡æ" Vector__XXX
  SG_ BatteryBoardEnum : 15|16@0+ (1,0) [0|250] "" Vector__XXX
 
@@ -129,32 +133,32 @@ BO_ 437 BMS_CellVoltage: 64 ApplicationECU
 BO_ 438 BMS_Cell_SoH: 64 ApplicationECU
 
 BO_ 439 BMS_Cell_SoC: 64 ApplicationECU
- SG_ CellSOC24 : 216|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC9 : 96|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC8 : 88|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC7 : 80|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC6 : 72|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC5 : 64|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC4 : 56|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC3 : 48|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC26 : 232|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC25 : 224|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC23 : 208|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC22 : 200|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC21 : 192|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC20 : 184|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC2 : 40|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC19 : 176|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC18 : 168|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC17 : 160|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC16 : 152|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC15 : 144|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC14 : 136|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC13 : 128|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC12 : 120|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC11 : 112|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC10 : 104|8@1- (1,0) [0|100] "" Vector__XXX
- SG_ CellSOC1 : 32|8@1- (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC24 : 223|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC9 : 103|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC8 : 95|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC7 : 87|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC6 : 79|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC5 : 71|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC4 : 63|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC3 : 55|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC26 : 239|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC25 : 231|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC23 : 215|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC22 : 207|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC21 : 199|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC20 : 191|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC2 : 47|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC19 : 183|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC18 : 175|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC17 : 167|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC16 : 159|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC15 : 151|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC14 : 143|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC13 : 135|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC12 : 127|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC11 : 119|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC10 : 111|8@0+ (1,0) [0|100] "" Vector__XXX
+ SG_ CellSOC1 : 39|8@0+ (1,0) [0|100] "" Vector__XXX
  SG_ BatteryBoardEnum : 15|16@0+ (1,0) [0|65535] "" Vector__XXX
 
 BO_ 434 BMS_Charge: 8 ApplicationECU
@@ -175,8 +179,8 @@ BO_ 440 BMS_EIS: 32 ApplicationECU
  SG_ BatEISSta : 111|8@0+ (1,0) [0|0] "" Vector__XXX
  SG_ Bat_EIS_Freq : 79|32@0+ (0.01,0) [0|42949672.95] "Hz" Vector__XXX
  SG_ Bat_EIS_CelNum : 71|8@0+ (1,0) [0|255] "" Vector__XXX
- SG_ BatCell_EIS_Z_Real : 39|32@0+ (1,0) [0|4294967295] "Î¼Î©" Vector__XXX
- SG_ BatCell_EIS_Z_Imag : 7|32@0+ (1,0) [0|4294967295] "Î¼Î©" Vector__XXX
+ SG_ BatCell_EIS_Z_Real : 39|32@0- (1,0) [0|4294967295] "Î¼Î©" Vector__XXX
+ SG_ BatCell_EIS_Z_Imag : 7|32@0- (1,0) [0|4294967295] "Î¼Î©" Vector__XXX
 
 BO_ 436 BMS_DIAG: 8 ApplicationECU
  SG_ BatFaultCode1 : 3|8@0+ (1,0) [0|255] "" Vector__XXX
@@ -307,8 +311,9 @@ BA_DEF_DEF_  "GenMsgSendType" "Cyclic";
 BA_DEF_DEF_  "GenSigInactiveValue" 0;
 BA_DEF_DEF_  "GenSigSendType" "Cyclic";
 BA_DEF_DEF_  "GenSigStartValue" 0;
-BA_ "SamplePointMax" 81.4;
 BA_ "BusType" "CAN FD";
+BA_ "SamplePointMax" 81.4;
+BA_ "VFrameFormat" BO_ 442 14;
 BA_ "GenMsgCycleTime" BO_ 515 10;
 BA_ "VFrameFormat" BO_ 515 14;
 BA_ "GenMsgCycleTime" BO_ 427 1000;

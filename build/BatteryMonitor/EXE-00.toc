@@ -77,7 +77,7 @@
  [],
  False,
  False,
- 1779875714,
+ 1779934309,
  [('runw.exe',
    'E:\\BatteryMonitorGUI\\.venv\\Lib\\site-packages\\PyInstaller\\bootloader\\Windows-64bit-intel\\runw.exe',
    'EXECUTABLE')],

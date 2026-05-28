@@ -311,6 +311,11 @@ class MainWindow(QWidget):
             data.software_version = f"v{major}.{minor}.{patch}"
             updated = True
 
+        # CPU 使用率
+        if 'CPU_USE' in signal_dict:
+            data.cpu_usage_percent = int(signal_dict['CPU_USE'])
+            updated = True
+
         # 26节单体 SoC
         for i in range(26):
             signal_name = f"CellSOC{i + 1}"
@@ -332,22 +337,13 @@ class MainWindow(QWidget):
                 data.cell_volt[i] = round(signal_dict[signal_name] / 1000.0,3)
                 updated = True
 
-        # 自动诊断
-        try:
-            max_temp = max(data.cell_temp)
-            min_soc = min(data.cell_soc)
-            if max_temp >= 60:
-                data.overall_diagnosis = (self.current_text.DIAG_OVER_TEMP)
-            elif max_temp >= 50:
-                data.overall_diagnosis = (self.current_text.DIAG_HIGH_TEMP)
-            elif min_soc <= 10:
-                data.overall_diagnosis = (self.current_text.DIAG_LOW_SOC)
-            elif data.pack_soh <= 80:
-                data.overall_diagnosis = (self.current_text.DIAG_LOW_SOH)
-            else:
-                data.overall_diagnosis = (self.current_text.DIAG_SYSTEM_OK)
-        except Exception:
-            pass
+        # 故障诊断
+        if 'BatFaultCode1' in signal_dict:
+            data.fault_code = int(signal_dict['BatFaultCode1'])
+            updated = True
+        if 'BatFaultLevel' in signal_dict:
+            data.fault_level = int(signal_dict['BatFaultLevel'])
+            updated = True
 
         # 数据更新（不直接刷新UI）
         if updated:
