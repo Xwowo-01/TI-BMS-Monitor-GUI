@@ -752,7 +752,7 @@ class OverallStatusPage(QWidget):
     # 更新时间
     def update_last_update_time(self, time_str):
         self.data.last_update_time = time_str
-        self.info_labels[2].setText(
+        self.info_labels[3].setText(
             f"<span style='color:gray'>"
             f"{self.ui_text.LAST_UPDATE_TIME}：</span>"
             f"<span style='color:black'>{time_str}</span>"

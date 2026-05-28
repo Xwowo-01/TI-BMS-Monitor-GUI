@@ -40,11 +40,6 @@ class UITextZH:
     STATUS_OFFLINE = "离线"
     CAN_INIT_FAILED = "CAN 初始化失败"
     JUMP_TO_MONITOR = "跳转到实时监测页，电池"
-    DIAG_OVER_TEMP = "严重过温"
-    DIAG_HIGH_TEMP = "高温预警"
-    DIAG_LOW_SOC = "SOC过低"
-    DIAG_LOW_SOH = "SOH过低"
-    DIAG_SYSTEM_OK = "系统正常"
 
 # English
 class UITextEN:
@@ -57,11 +52,6 @@ class UITextEN:
     STATUS_OFFLINE = "Offline"
     CAN_INIT_FAILED = "CAN initialization failed"
     JUMP_TO_MONITOR = "Jump to monitor page, battery"
-    DIAG_OVER_TEMP = "Critical Over Temperature"
-    DIAG_HIGH_TEMP = "High Temperature Warning"
-    DIAG_LOW_SOC = "Low SOC"
-    DIAG_LOW_SOH = "Low SOH"
-    DIAG_SYSTEM_OK = "System OK"
 
 class MainWindow(QWidget):
     def __init__(self):
