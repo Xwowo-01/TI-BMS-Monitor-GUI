@@ -198,53 +198,24 @@ class OverallStatusData:
         self.fault_level = 0
     # 统计
     def recalculate_statistics(self):
-        valid_soc = [
-            v for v in self.cell_soc
-            if v >= 0
-        ]
+        valid_soc = [v for v in self.cell_soc if v >= 0]
         if not valid_soc:
             self.overall_diagnosis = ""
             return
         self.max_energy_percent = max(valid_soc)
         self.min_energy_percent = min(valid_soc)
         nominal_cap_per_cell = 4000
-        self.max_energy_mah = int(
-            nominal_cap_per_cell
-            * self.max_energy_percent / 100
-        )
-        self.min_energy_mah = int(
-            nominal_cap_per_cell
-            * self.min_energy_percent / 100
-        )
+        self.max_energy_mah = int(nominal_cap_per_cell * self.max_energy_percent / 100)
+        self.min_energy_mah = int(nominal_cap_per_cell * self.min_energy_percent / 100)
         avg_soc = sum(valid_soc) / len(valid_soc)
-        total_nominal_cap = (
-            nominal_cap_per_cell
-            * self.total_battery_count
-        )
-        self.total_remaining_energy_mah = int(
-            total_nominal_cap * avg_soc / 100
-        )
-        valid_temp = [
-            v for v in self.cell_temp
-            if v > -50
-        ]
+        total_nominal_cap = (nominal_cap_per_cell * self.total_battery_count)
+        self.total_remaining_energy_mah = int(total_nominal_cap * avg_soc / 100)
+        valid_temp = [v for v in self.cell_temp if v > -50]
         if valid_temp:
-            self.avg_temp_c = round(
-                sum(valid_temp) / len(valid_temp),
-                1
-            )
-            self.max_temp_c = round(
-                max(valid_temp),
-                1
-            )
-            self.min_temp_c = round(
-                min(valid_temp),
-                1
-            )
-        valid_volt = [
-            v for v in self.cell_volt
-            if v > 0
-        ]
+            self.avg_temp_c = round(sum(valid_temp) / len(valid_temp),1)
+            self.max_temp_c = round(max(valid_temp),1)
+            self.min_temp_c = round(min(valid_temp),1)
+        valid_volt = [v for v in self.cell_volt if v > 0]
         if valid_volt:
             self.avg_voltage_v = round(sum(valid_volt) / len(valid_volt),3)
             self.max_voltage_v = round(max(valid_volt),3)
@@ -254,12 +225,8 @@ class OverallStatusData:
 
     # 历史
     def add_current_to_history(self):
-        self.soc_history.append(
-            self.total_soc_percent
-        )
-        self.soh_history.append(
-            self.total_soh_percent
-        )
+        self.soc_history.append(self.total_soc_percent)
+        self.soh_history.append(self.total_soh_percent)
         if len(self.soc_history) > self.max_history_len:
             self.soc_history.pop(0)
         if len(self.soh_history) > self.max_history_len:
@@ -302,7 +269,6 @@ CATEGORY_TEXT_EN = {1: "Slight Alarm", 2: "General Alarm", 3: "Severe Alarm"}
 CATEGORY_COLOR = {1: "#f9a825", 2: "#ff6d00", 3: "#d32f2f"}  # 黄, 橙, 红
 class OverallStatusPage(QWidget):
     cellClicked = Signal(str)
-
     def __init__(self):
         super().__init__()
         self.ui_text = UITextZH
@@ -315,14 +281,8 @@ class OverallStatusPage(QWidget):
         self.update_all_matrices()
         self.update_trend_chart()
 
-    # ---------- 故障信息获取方法 ----------
+    # 故障信息获取
     def get_fault_info(self):
-        """
-        返回 (整体诊断文本, category, 显示码) 元组。
-        - 如果 fault_code == -1 或 None: 返回 ("--", 0, "")
-        - 如果 fault_code == 0: 返回 ("系统正常"/"System Normal", 0, "")
-        - 如果 1-22: 返回对应信息
-        """
         code = self.data.fault_code
         if code is None or code == -1:
             return ("--", 0, "")
@@ -347,23 +307,20 @@ class OverallStatusPage(QWidget):
     def get_category_color(self, category):
         return CATEGORY_COLOR.get(category, "black")
 
-    # ---------- UI 构建 ----------
+    # UI 构建
     def _setup_ui(self):
         main = QHBoxLayout(self)
         main.setStretch(0, 1)
         main.setStretch(1, 2)
-
         # LEFT
         left = QWidget()
         lv = QVBoxLayout(left)
         self.title_label = QLabel(self.ui_text.PAGE_TITLE)
         self.title_label.setFont(QFont("Arial", 16, QFont.Bold))
         lv.addWidget(self.title_label)
-
         self.summary_label = QLabel()
         self.summary_label.setFont(QFont("Arial", 11))
         lv.addWidget(self.summary_label)
-
         gauge_layout = QGridLayout()
         gauge_layout.setHorizontalSpacing(20)
         gauge_layout.setVerticalSpacing(10)
@@ -382,7 +339,6 @@ class OverallStatusPage(QWidget):
         gauge_layout.setColumnStretch(0, 1)
         gauge_layout.setColumnStretch(1, 2)
         lv.addLayout(gauge_layout)
-
         stats_layout = QHBoxLayout()
         self.temp_label = QLabel()
         self.temp_label.setFont(QFont("Arial", 10))
@@ -391,12 +347,10 @@ class OverallStatusPage(QWidget):
         stats_layout.addWidget(self.temp_label)
         stats_layout.addWidget(self.volt_label)
         lv.addLayout(stats_layout)
-
         line = QFrame()
         line.setFixedHeight(1)
         line.setStyleSheet("background-color: rgba(200,200,200,150);")
         lv.addWidget(line)
-
         bottom_layout = QHBoxLayout()
         info_layout = QVBoxLayout()
         self.info_labels = []
@@ -411,7 +365,6 @@ class OverallStatusPage(QWidget):
         lv.addLayout(bottom_layout)
         lv.addStretch()
         main.addWidget(left)
-
         # RIGHT
         right = QWidget()
         right_layout = QGridLayout(right)
@@ -452,7 +405,6 @@ class OverallStatusPage(QWidget):
         shadow.setYOffset(2)
         shadow.setColor(QColor(0, 0, 0, 60))
         outer.setGraphicsEffect(shadow)
-
         layout = QVBoxLayout(outer)
         layout.setContentsMargins(12, 12, 12, 12)
         title_label = QLabel(title)
@@ -478,14 +430,13 @@ class OverallStatusPage(QWidget):
             cells.append(cell)
             cell.clicked.connect(self.cellClicked.emit)
         layout.addLayout(grid)
-
         legend = QLabel(self.ui_text.LEGEND_TEXT)
         legend.setStyleSheet("color: gray; font-size: 10px; margin-top: 6px;")
         outer.legend_label = legend
         layout.addWidget(legend)
         return outer, cells
 
-    # ---------- 语言切换 ----------
+    # 语言切换
     def switch_language(self, language="zh"):
         if language == "en":
             self.ui_text = UITextEN
@@ -521,11 +472,9 @@ class OverallStatusPage(QWidget):
             f"<span style='color:green'>{self.ui_text.TOTAL_CHIP_COUNT}：</span>"
             f"<span style='color:black'>{self.data.total_chip_count}</span>"
         )
-
         # 仪表盘
         self.total_energy_gauge.setValue(self.data.eis_pack_soc)
         self.total_soh_gauge.setValue(self.data.eis_bat_soh)
-
         # 左侧下半部分（容量、诊断等）
         self.total_energy_label.setText(
             f"<span style='color:green'>{self.ui_text.TOTAL_CHARGE_CAPACITY}：</span>"
@@ -535,37 +484,29 @@ class OverallStatusPage(QWidget):
             f"<span style='color:green'>{self.ui_text.PACK_SOC}：</span>"
             f"<span style='color:black'>{self.data.pack_soc} %</span>"
         )
-
         # ========== 故障相关显示 ==========
         diag_desc, category, fault_code_str = self.get_fault_info()
-        # 有故障的条件：fault_code 在 1 到 22 之间
         is_fault = (self.data.fault_code is not None and 1 <= self.data.fault_code <= 22)
-
         # 第一行：整体诊断
         diag_line = f"<span style='color:green'>{self.ui_text.OVERALL_DIAGNOSIS}：</span>"
         diag_line += f"<span style='color:black'>{diag_desc}</span>"
-
-        # 第二行：故障等级（只有有故障且 category > 0 时才显示）
+        # 第二行：故障等级
         level_line = ""
         if is_fault and category > 0:
             cat_text = self.get_category_text(category)
             color = self.get_category_color(category)
             level_line = f"<br><span style='color:green'>{self.ui_text.FAULT_LEVEL}：</span>"
             level_line += f"<span style='color:{color}'>{cat_text} - 等级{self.data.fault_level}</span>"
-
-        # 第三行：故障码（只有有故障且 fault_code_str 非空时显示）
+        # 第三行：故障码
         code_line = ""
         if is_fault and fault_code_str:
             code_line = f"<br><span style='color:green'>{self.ui_text.FAULT_CODE}：</span>"
             code_line += f"<span style='color:black'>{fault_code_str}</span>"
-
         # 第四行：Pack SOH
         soh_line = f"<br><span style='color:green'>{self.ui_text.PACK_SOH}：</span>"
         soh_line += f"<span style='color:black'>{self.data.pack_soh} %</span>"
-
         # 组合所有行
         self.total_soh_label.setText(diag_line + level_line + code_line + soh_line)
-
         # 温度电压统计
         self.temp_label.setText(
             f"<span style='color:green'>{self.ui_text.TEMP_STAT}：</span><br>"
@@ -585,7 +526,6 @@ class OverallStatusPage(QWidget):
             f"<span style='color:green'>{self.ui_text.VOLT_MIN}：</span>"
             f"<span style='color:black'>{self.data.min_voltage_v} V</span>"
         )
-
         # 底部信息栏
         self.info_labels[0].setText(
             f"<span style='color:gray'>{self.ui_text.SOFTWARE_VERSION}：</span>"
