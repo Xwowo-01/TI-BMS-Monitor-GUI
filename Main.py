@@ -123,32 +123,11 @@ class MainWindow(QWidget):
         self.chart_refresh_timer.start(1000)
         # 初始化 CAN
         try:
-            settings = QSettings(
-                "BatteryMonitor",
-                "CANConfig"
-            )
-            app_name = settings.value(
-                "app_name",
-                "VectorTest"
-            )
-            channel = int(
-                settings.value(
-                    "channel",
-                    0
-                )
-            )
-            arb_bitrate = int(
-                settings.value(
-                    "arb_bitrate",
-                    1000000
-                )
-            )
-            data_bitrate = int(
-                settings.value(
-                    "data_bitrate",
-                    1000000
-                )
-            )
+            settings = QSettings( "BatteryMonitor","CANConfig")
+            app_name = settings.value("app_name","VectorTest")
+            channel = int(settings.value("channel",0))
+            arb_bitrate = int(settings.value("arb_bitrate",1000000))
+            data_bitrate = int(settings.value("data_bitrate",1000000))
             self.dbc_path = resource_path("System3.dbc")
             self.can_receiver = CANReceiver(
                 app_name=app_name,
