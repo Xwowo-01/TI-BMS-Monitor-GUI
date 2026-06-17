@@ -168,13 +168,15 @@ class MainWindow(QWidget):
         try:
             self.overall_page.update_display()
             self.overall_page.update_all_matrices()
+            self.single_page.update_data_display()   # 刷新单体页面左侧数据
         except Exception as e:
             print(f"UI刷新错误: {e}")
 
-    # 低频刷新趋势图
+    # 低频刷新趋势图（Overall 趋势 + Single 电压温度图）
     def refresh_chart(self):
         try:
             self.overall_page.update_trend_chart()
+            self.single_page.refresh_plots()   # 每秒更新单体电压/温度曲线
         except Exception as e:
             print(f"趋势图刷新错误: {e}")
 
@@ -204,7 +206,9 @@ class MainWindow(QWidget):
     # CAN 数据更新
     def on_can_data_updated(self, signal_dict):
         data = self.overall_page.data
+        single_data = self.single_page.data  # 获取单体数据对象
         updated = False
+
         # 电池数量 / 芯片数量
         if 'Conn1Number' in signal_dict:
             data.total_chip_count = int(signal_dict['Conn1Number'])
@@ -272,7 +276,6 @@ class MainWindow(QWidget):
         # 软件版本
         if 'BMS_SoftVer' in signal_dict:
             ver = int(signal_dict['BMS_SoftVer'])
-            # 防御一下范围
             ver = max(0, min(ver, 256))
             major = ver // 100
             minor = (ver // 10) % 10
@@ -289,21 +292,31 @@ class MainWindow(QWidget):
         for i in range(26):
             signal_name = f"CellSOC{i + 1}"
             if signal_name in signal_dict:
-                data.cell_soc[i] = int(signal_dict[signal_name])
+                soc_val = int(signal_dict[signal_name])
+                data.cell_soc[i] = soc_val
+                # 同步到 SingleMonitor 数据
+                single_data.cell_soc[i] = soc_val
+                single_data.cell_remaining_cap[i] = int(
+                    single_data.cell_full_cap[i] * soc_val / 100
+                )
                 updated = True
 
         # 26节单体温度
         for i in range(26):
             signal_name = f"CellTemp{i + 1}"
             if signal_name in signal_dict:
-                data.cell_temp[i] = round(signal_dict[signal_name],1)
+                temp_val = round(signal_dict[signal_name], 1)
+                data.cell_temp[i] = temp_val
+                single_data.cell_temp[i] = temp_val
                 updated = True
 
         # 26节单体电压
         for i in range(26):
             signal_name = f"CellVoltage{i + 1}"
             if signal_name in signal_dict:
-                data.cell_volt[i] = round(signal_dict[signal_name] / 1000.0,3)
+                volt_val = round(signal_dict[signal_name] / 1000.0, 3)
+                data.cell_volt[i] = volt_val
+                single_data.cell_voltage[i] = volt_val
                 updated = True
 
         # 故障诊断
@@ -313,6 +326,20 @@ class MainWindow(QWidget):
         if 'BatFaultLevel' in signal_dict:
             data.fault_level = int(signal_dict['BatFaultLevel'])
             updated = True
+
+        # ---------- EIS 数据解析（报文 ID 440） ----------
+        # 解析 EIS 数据点（实部虚部）
+        if 'Bat_EIS_CelNum' in signal_dict and 'BatCell_EIS_Z_Real' in signal_dict and 'BatCell_EIS_Z_Imag' in signal_dict:
+            cell_num = int(signal_dict['Bat_EIS_CelNum'])
+            # 频率因子 0.01，单位 Hz
+            freq = signal_dict.get('Bat_EIS_Freq', 0.0) * 0.01
+            real = signal_dict['BatCell_EIS_Z_Real']
+            imag = signal_dict['BatCell_EIS_Z_Imag']
+            self.single_page.receive_eis_point(cell_num, freq, real, imag)
+
+        # 解析 EIS 完成标志
+        if 'EISFinish' in signal_dict and signal_dict['EISFinish'] == 1:
+            self.single_page.on_eis_finish()
 
         # 数据更新（不直接刷新UI）
         if updated:
@@ -325,6 +352,10 @@ class MainWindow(QWidget):
             if now - self.last_history_update >= 1.0:
                 data.add_current_to_history()
                 self.last_history_update = now
+
+            # 如果 SingleMonitor 处于采集状态，记录当前数据到历史
+            if single_data.vt_status == "running":
+                single_data.record_current_data(now)
 
     # CAN 报文接收
     def on_can_message_received(self):
