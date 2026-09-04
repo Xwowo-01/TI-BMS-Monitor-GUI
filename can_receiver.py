@@ -10,6 +10,20 @@ import vector_utils
 
 from PySide6.QtCore import QObject, Signal
 
+# ================= PCAN CAN-FD 时序参数（脚本开头可微调） =================
+# 位时间 = nom_brp * (nom_tseg1 + nom_tseg2 + 1) / f_clock
+# 例：80 MHz 时钟，nom_brp=1，tseg1=63，tseg2=16 → 80 个 tq → 1 Mbps
+PCAN_FD_CLOCK_MHZ = 80      # PCAN 时钟频率（MHz），常见 80 / 60 / 40 / 30 / 24 / 20
+PCAN_NOM_BRP = 1            # 仲裁域预分频
+PCAN_NOM_TSEG1 = 63         # 仲裁域时间段 1
+PCAN_NOM_TSEG2 = 16         # 仲裁域时间段 2
+PCAN_NOM_SJW = 16           # 仲裁域同步跳宽
+PCAN_DATA_BRP = 1           # 数据域预分频
+PCAN_DATA_TSEG1 = 63        # 数据域时间段 1
+PCAN_DATA_TSEG2 = 16        # 数据域时间段 2
+PCAN_DATA_SJW = 16          # 数据域同步跳宽
+
+
 class CANReceiver(QObject):
     """CAN 接收器，通过 Notifier 异步接收报文并发射信号"""
     message_received = Signal()
@@ -23,6 +37,7 @@ class CANReceiver(QObject):
             arb_bitrate=1_000_000,
             data_bitrate=1_000_000,
             dbc_path='System3.dbc',
+            interface='vector',
             parent=None
     ):
         super().__init__(parent)
@@ -31,6 +46,7 @@ class CANReceiver(QObject):
         self.arb_bitrate = arb_bitrate
         self.data_bitrate = data_bitrate
         self.dbc_path = dbc_path
+        self.interface = interface   # 'vector' 或 'pcan'
         self.bus = None
         self.notifier = None
         self.db = None
@@ -58,34 +74,55 @@ class CANReceiver(QObject):
     # 初始化总线
     def _init_bus(self):
         try:
-            # 自动确保 Vector 应用存在（不存在则按检测到的硬件自动创建）；
-            # 失败不阻断，仍按原逻辑用 app_name 打开总线。
-            try:
-                vector_utils.ensure_vector_application(
-                    self.app_name,
-                    self.channel
-                )
-            except Exception as e:
-                print(f"Vector 应用自动创建跳过: {e}")
+            if self.interface == 'vector':
+                # 自动确保 Vector 应用存在（不存在则按检测到的硬件自动创建）；
+                # 失败不阻断，仍按原逻辑用 app_name 打开总线。
+                try:
+                    vector_utils.ensure_vector_application(
+                        self.app_name,
+                        self.channel
+                    )
+                except Exception as e:
+                    print(f"Vector 应用自动创建跳过: {e}")
 
-            self.bus = can.interface.Bus(
-                interface='vector',
-                channel=self.channel,
-                bitrate=self.arb_bitrate,
-                data_bitrate=self.data_bitrate,
-                app_name=self.app_name,
-                fd=True
-            )
+                self.bus = can.interface.Bus(
+                    interface='vector',
+                    channel=self.channel,
+                    bitrate=self.arb_bitrate,
+                    data_bitrate=self.data_bitrate,
+                    app_name=self.app_name,
+                    fd=True
+                )
+                chan_desc = f"CH{self.channel + 1}"
+            else:
+                # PCAN：通道名 PCAN_USBBUS1 / PCAN_USBBUS2 ...，CAN-FD
+                channel_name = f"PCAN_USBBUS{self.channel + 1}"
+                self.bus = can.interface.Bus(
+                    interface='pcan',
+                    channel=channel_name,
+                    fd=True,
+                    f_clock_mhz=PCAN_FD_CLOCK_MHZ,
+                    nom_brp=PCAN_NOM_BRP,
+                    nom_tseg1=PCAN_NOM_TSEG1,
+                    nom_tseg2=PCAN_NOM_TSEG2,
+                    nom_sjw=PCAN_NOM_SJW,
+                    data_brp=PCAN_DATA_BRP,
+                    data_tseg1=PCAN_DATA_TSEG1,
+                    data_tseg2=PCAN_DATA_TSEG2,
+                    data_sjw=PCAN_DATA_SJW,
+                )
+                chan_desc = channel_name
+
             print(
                 f"接收通道 "
-                f"(CH{self.channel + 1}) "
+                f"({chan_desc}) "
                 f"初始化成功。"
             )
             self.notifier = can.Notifier(
                 self.bus,
                 [self._on_message_received]
             )
-        except can.CanError as e:
+        except Exception as e:
             msg = f"CAN 总线错误: {e}"
             print(msg)
             self.error_occurred.emit(msg)
@@ -145,5 +182,7 @@ class CANReceiver(QObject):
             "data_bitrate":
                 self.data_bitrate,
             "dbc_path":
-                self.dbc_path
+                self.dbc_path,
+            "interface":
+                self.interface
         }

@@ -17,10 +17,11 @@ class UDSFlasher(QObject):
     TRANSFER_SIZE = 0x800
     FLASH_ADDR = 0x10100000
     # INIT
-    def __init__(self, bin_file, save_log=False):
+    def __init__(self, bin_file, save_log=False, fd=False):
         super().__init__()
         self.bin_file = bin_file
         self.save_log = save_log
+        self.fd = fd          # True=CAN-FD 模式，False=普通(经典 CAN)
         self.log_file = None
         self.bus = None
         # 读取用户保存的 CAN 配置
@@ -44,6 +45,12 @@ class UDSFlasher(QObject):
                 1000000
             )
         )
+        self.data_bitrate = int(
+            settings.value(
+                "data_bitrate",
+                1000000
+            )
+        )
     # LOG
     def log(self, text):
         self.log_signal.emit(text)
@@ -52,24 +59,29 @@ class UDSFlasher(QObject):
             self.log_file.flush()
     # CAN
     def create_bus(self):
-        self.bus = can.interface.Bus(
+        kwargs = dict(
             interface='vector',
             channel=self.channel,
             bitrate=self.bitrate,
             app_name=self.vector_app_name,
-            fd=True
+            fd=self.fd,
         )
+        if self.fd:
+            kwargs['data_bitrate'] = self.data_bitrate
+        self.bus = can.interface.Bus(**kwargs)
         self.log(
             f"CAN 初始化成功 "
             f"(App={self.vector_app_name}, "
             f"CH={self.channel}, "
-            f"Bitrate={self.bitrate})"
+            f"Bitrate={self.bitrate}, "
+            f"FD={self.fd})"
         )
     def send_can(self, data):
         msg = can.Message(
             arbitration_id=self.TX_ID,
             data=data,
-            is_extended_id=False
+            is_extended_id=False,
+            is_fd=self.fd
         )
         self.bus.send(msg)
         self.log(

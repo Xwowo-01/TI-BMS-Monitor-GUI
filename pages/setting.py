@@ -15,7 +15,8 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
     QFormLayout,
-    QTextEdit
+    QTextEdit,
+    QComboBox
 )
 
 from language_manager import language_manager
@@ -58,6 +59,9 @@ class UITextZH:
     LANGUAGE_TITLE = "语言"
     SWITCH_ZH = "中文"
     SWITCH_EN = "English"
+    INTERFACE = "CAN 接口"
+    INTERFACE_VECTOR = "Vector"
+    INTERFACE_PCAN = "PCAN"
     APP_NAME = "应用名"
     CHANNEL = "通道"
     ARB_BITRATE = "仲裁域波特率"
@@ -66,12 +70,13 @@ class UITextZH:
     LOG_TITLE = "实时日志"
     SECTION_CAN = "CAN 配置"
     SECTION_LOG = "实时日志"
-    CAN_HELP = "CAN 通道与波特率参数，需与总线及 Vector 硬件配置一致"
+    CAN_HELP = "CAN 接口、通道与波特率参数，需与总线及硬件配置一致"
     LOG_HELP = "程序运行日志（stdout / stderr 实时捕获）"
-    APP_NAME_HINT = "Vector Hardware Config 中创建的应用名"
-    CHANNEL_HINT = "通道序号（0 对应 CH1）"
+    INTERFACE_HINT = "选择使用的 CAN 卡：Vector 或 PCAN"
+    APP_NAME_HINT = "Vector Hardware Config 中创建的应用名（仅 Vector）"
+    CHANNEL_HINT = "通道序号（0 对应 CH1 / PCAN_USBBUS1）"
     ARB_HINT = "仲裁域波特率（bps）"
-    DATA_HINT = "数据域波特率（bps，CAN FD）"
+    DATA_HINT = "数据域波特率（bps，CAN FD，仅 Vector）"
 
 
 # English 文本
@@ -80,6 +85,9 @@ class UITextEN:
     LANGUAGE_TITLE = "Language"
     SWITCH_ZH = "中文"
     SWITCH_EN = "English"
+    INTERFACE = "CAN Interface"
+    INTERFACE_VECTOR = "Vector"
+    INTERFACE_PCAN = "PCAN"
     APP_NAME = "App Name"
     CHANNEL = "Channel"
     ARB_BITRATE = "Arbitration Bitrate"
@@ -88,15 +96,17 @@ class UITextEN:
     LOG_TITLE = "Live Log"
     SECTION_CAN = "CAN Configuration"
     SECTION_LOG = "Live Log"
-    CAN_HELP = "CAN channel and bitrate parameters, must match the bus and Vector hardware config"
+    CAN_HELP = "CAN interface, channel and bitrate parameters, must match the bus and hardware config"
     LOG_HELP = "Live application log (stdout / stderr capture)"
-    APP_NAME_HINT = "Application name created in Vector Hardware Config"
-    CHANNEL_HINT = "Channel index (0 = CH1)"
+    INTERFACE_HINT = "Select the CAN card: Vector or PCAN"
+    APP_NAME_HINT = "Application name created in Vector Hardware Config (Vector only)"
+    CHANNEL_HINT = "Channel index (0 = CH1 / PCAN_USBBUS1)"
     ARB_HINT = "Arbitration bitrate (bps)"
-    DATA_HINT = "Data bitrate (bps, CAN FD)"
+    DATA_HINT = "Data bitrate (bps, CAN FD, Vector only)"
 
 class SettingUI(QWidget):
-    reconnect_requested = Signal(str, int, int, int)
+    # interface, app_name, channel, arb_bitrate, data_bitrate
+    reconnect_requested = Signal(str, str, int, int, int)
     def __init__(self):
         super().__init__()
         self.current_text = UITextZH
@@ -141,6 +151,12 @@ class SettingUI(QWidget):
         form_layout.setLabelAlignment(Qt.AlignRight)
         form_layout.setHorizontalSpacing(12)
         form_layout.setVerticalSpacing(12)
+        self.interface_combo = QComboBox()
+        self.interface_combo.addItem(self.current_text.INTERFACE_VECTOR, "vector")
+        self.interface_combo.addItem(self.current_text.INTERFACE_PCAN, "pcan")
+        self.interface_combo.setToolTip(self.current_text.INTERFACE_HINT)
+        self.interface_label = QLabel(self.current_text.INTERFACE)
+        form_layout.addRow(self.interface_label, self.interface_combo)
         self.app_name_edit = QLineEdit()
         self.channel_edit = QLineEdit()
         self.arb_bitrate_edit = QLineEdit()
@@ -186,10 +202,14 @@ class SettingUI(QWidget):
 
     # 加载历史配置
     def load_saved_config(self):
+        interface = self.settings.value("can_interface", "vector")
         app_name = self.settings.value("app_name", "VectorTest")
         channel = self.settings.value("channel", 0)
         arb_bitrate = self.settings.value("arb_bitrate", 1000000)
         data_bitrate = self.settings.value("data_bitrate", 1000000)
+        idx = self.interface_combo.findData(interface)
+        if idx >= 0:
+            self.interface_combo.setCurrentIndex(idx)
         self.app_name_edit.setText(str(app_name))
         self.channel_edit.setText(str(channel))
         self.arb_bitrate_edit.setText(str(arb_bitrate))
@@ -200,15 +220,19 @@ class SettingUI(QWidget):
     # 重连按钮逻辑
     def on_reconnect_clicked(self):
         try:
+            interface = self.interface_combo.currentData()
             app_name = self.app_name_edit.text().strip()
             channel = int(self.channel_edit.text())
             arb_bitrate = int(self.arb_bitrate_edit.text())
             data_bitrate = int(self.data_bitrate_edit.text())
+            self.settings.setValue("can_interface", interface)
             self.settings.setValue("app_name", app_name)
             self.settings.setValue("channel", channel)
             self.settings.setValue("arb_bitrate", arb_bitrate)
             self.settings.setValue("data_bitrate", data_bitrate)
-            self.reconnect_requested.emit(app_name, channel, arb_bitrate, data_bitrate)
+            self.reconnect_requested.emit(
+                interface, app_name, channel, arb_bitrate, data_bitrate
+            )
         except Exception as e:
             print(f"参数错误: {e}")
 
@@ -226,6 +250,7 @@ class SettingUI(QWidget):
         self.lang_label.setText(self.current_text.LANGUAGE_TITLE)
         self.zh_btn.setText(self.current_text.SWITCH_ZH)
         self.en_btn.setText(self.current_text.SWITCH_EN)
+        self.interface_label.setText(self.current_text.INTERFACE)
         self.app_name_label.setText(self.current_text.APP_NAME)
         self.channel_label.setText(self.current_text.CHANNEL)
         self.arb_label.setText(self.current_text.ARB_BITRATE)

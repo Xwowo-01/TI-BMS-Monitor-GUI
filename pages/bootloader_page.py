@@ -44,6 +44,7 @@ class UITextCN:
     LOG_HELP = "刷写过程中的 CAN 收发报文"
     MONITOR_START = "开始监听报文"
     MONITOR_STOP = "停止监听"
+    FD_MODE = "CAN-FD 模式"
 
 # English
 class UITextEN:
@@ -69,6 +70,7 @@ class UITextEN:
     LOG_HELP = "CAN frames transmitted/received during flashing"
     MONITOR_START = "Start Monitor"
     MONITOR_STOP = "Stop Monitor"
+    FD_MODE = "CAN-FD Mode"
 
 class BootloaderPage(QWidget):
     starting_flash = Signal()
@@ -134,6 +136,9 @@ class BootloaderPage(QWidget):
         self.progress = QProgressBar()
         self.progress.setValue(0)
         self.flash_card.add_widget(self.progress)
+        self.fd_checkbox = QCheckBox(self.current_ui.FD_MODE)
+        self.fd_checkbox.setChecked(False)
+        self.flash_card.add_widget(self.fd_checkbox)
         self.start_btn = QPushButton(self.current_ui.START_FLASH)
         self.start_btn.setObjectName("PrimaryButton")
         self.start_btn.clicked.connect(self.start_flash)
@@ -164,6 +169,7 @@ class BootloaderPage(QWidget):
         self.title_label.setText(ui.PAGE_TITLE)
         self.file_btn.setText(ui.SELECT_BIN_FILE)
         self.log_checkbox.setText(ui.SAVE_CAN_LOG)
+        self.fd_checkbox.setText(ui.FD_MODE)
         self.start_btn.setText(ui.START_FLASH)
         self.monitor_btn.setText(
             ui.MONITOR_STOP if self.monitoring else ui.MONITOR_START
@@ -226,7 +232,8 @@ class BootloaderPage(QWidget):
         self.thread = QThread()
         self.flasher = UDSFlasher(
             self.bin_file,
-            self.log_checkbox.isChecked()
+            self.log_checkbox.isChecked(),
+            self.fd_checkbox.isChecked()
         )
         self.flasher.moveToThread(self.thread)
         self.thread.started.connect(self.flasher.flash)

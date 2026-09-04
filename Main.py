@@ -150,6 +150,7 @@ class MainWindow(QWidget):
         # 初始化 CAN
         try:
             settings = QSettings( "BatteryMonitor","CANConfig")
+            self.can_interface = settings.value("can_interface","vector")
             app_name = settings.value("app_name","VectorTest")
             channel = int(settings.value("channel",0))
             arb_bitrate = int(settings.value("arb_bitrate",1000000))
@@ -160,7 +161,8 @@ class MainWindow(QWidget):
                 channel=channel,
                 arb_bitrate=arb_bitrate,
                 data_bitrate=data_bitrate,
-                dbc_path=self.dbc_path
+                dbc_path=self.dbc_path,
+                interface=self.can_interface
             )
             self.can_receiver.data_updated.connect(self.on_can_data_updated)
             self.can_receiver.message_received.connect(self.on_can_message_received)
@@ -266,7 +268,20 @@ class MainWindow(QWidget):
         if success:
             dbc_path = self.dbc_path
             try:
-                self.can_receiver = CANReceiver(dbc_path=dbc_path)
+                settings = QSettings("BatteryMonitor", "CANConfig")
+                self.can_interface = settings.value("can_interface", "vector")
+                app_name = settings.value("app_name", "VectorTest")
+                channel = int(settings.value("channel", 0))
+                arb_bitrate = int(settings.value("arb_bitrate", 1000000))
+                data_bitrate = int(settings.value("data_bitrate", 1000000))
+                self.can_receiver = CANReceiver(
+                    app_name=app_name,
+                    channel=channel,
+                    arb_bitrate=arb_bitrate,
+                    data_bitrate=data_bitrate,
+                    dbc_path=dbc_path,
+                    interface=self.can_interface
+                )
                 self.can_receiver.data_updated.connect(self.on_can_data_updated)
                 self.can_receiver.message_received.connect(self.on_can_message_received)
                 self.can_receiver.raw_message.connect(self.bootloader_page.on_raw_message)
@@ -495,6 +510,7 @@ class MainWindow(QWidget):
     # CAN 重连
     def reconnect_can(
             self,
+            interface,
             app_name,
             channel,
             arb_bitrate,
@@ -505,13 +521,15 @@ class MainWindow(QWidget):
             self.can_receiver.stop()
             self.can_receiver = None
         dbc_path = self.dbc_path
+        self.can_interface = interface
         try:
             self.can_receiver = CANReceiver(
                 app_name=app_name,
                 channel=channel,
                 arb_bitrate=arb_bitrate,
                 data_bitrate=data_bitrate,
-                dbc_path=dbc_path
+                dbc_path=dbc_path,
+                interface=interface
             )
             self.can_receiver.data_updated.connect(self.on_can_data_updated)
             self.can_receiver.message_received.connect(self.on_can_message_received)

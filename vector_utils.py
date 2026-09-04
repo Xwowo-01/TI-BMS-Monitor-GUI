@@ -20,13 +20,19 @@ _HWTYPE_VIRTUAL = 1
 
 
 def prepare_vector_dll():
-    """把 vxlapi64.dll 所在目录加入 PATH，返回 DLL 完整路径（找不到返回 None）。
+    """把打包进 exe 的 CAN DLL（vxlapi64.dll / PCANBasic.dll）所在目录加入 PATH。
 
-    必须在首次 import can.interfaces.vector 之前调用。
+    python-can 的 vector / pcan 接口都通过 ctypes.util.find_library 加载 DLL，
+    而 Windows 上的 find_library 只搜索 os.environ["PATH"]，不会自动搜索
+    PyInstaller 的 _MEIPASS 目录，因此必须显式处理。
+
+    必须在首次 import can.interfaces.vector / can.interfaces.pcan 之前调用。
+    返回加入 PATH 的目录（找不到返回 None）。
     """
     if os.name != "nt":
         return None
 
+    dll_names = ("vxlapi64.dll", "PCANBasic.dll")
     candidates = []
     # PyInstaller 冻结环境：onedir 模式下 DLL 位于 sys._MEIPASS（即 _internal）
     if getattr(sys, "_MEIPASS", None):
@@ -35,8 +41,9 @@ def prepare_vector_dll():
     candidates.append(os.path.dirname(os.path.abspath(__file__)))
 
     for directory in candidates:
-        dll = os.path.join(directory, "vxlapi64.dll")
-        if not os.path.isfile(dll):
+        if not any(
+            os.path.isfile(os.path.join(directory, name)) for name in dll_names
+        ):
             continue
         try:
             os.add_dll_directory(directory)  # Python >= 3.8
@@ -48,7 +55,7 @@ def prepare_vector_dll():
             os.environ["PATH"] = (
                 directory + (os.pathsep + path if path else "")
             )
-        return dll
+        return directory
     return None
 
 
