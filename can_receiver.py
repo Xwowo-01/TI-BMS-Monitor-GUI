@@ -6,6 +6,8 @@ CAN 报文接收模块，封装成 QObject，使用信号通知 GUI。
 import cantools
 import can
 
+import vector_utils
+
 from PySide6.QtCore import QObject, Signal
 
 class CANReceiver(QObject):
@@ -55,6 +57,16 @@ class CANReceiver(QObject):
     # 初始化总线
     def _init_bus(self):
         try:
+            # 自动确保 Vector 应用存在（不存在则按检测到的硬件自动创建）；
+            # 失败不阻断，仍按原逻辑用 app_name 打开总线。
+            try:
+                vector_utils.ensure_vector_application(
+                    self.app_name,
+                    self.channel
+                )
+            except Exception as e:
+                print(f"Vector 应用自动创建跳过: {e}")
+
             self.bus = can.interface.Bus(
                 interface='vector',
                 channel=self.channel,

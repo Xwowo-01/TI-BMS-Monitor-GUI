@@ -1,4 +1,7 @@
 # main.py
+import vector_utils
+vector_utils.prepare_vector_dll()  # 必须在首次 import can.interfaces.vector 之前调用
+
 import can
 import can.interfaces.vector  # 显式导入，解决打包问题
 from PySide6.QtCore import QSettings, QTimer

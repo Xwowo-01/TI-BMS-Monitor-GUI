@@ -1,12 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
 
 block_cipher = None
 
+# 把 Vector XL Driver Library 的 vxlapi64.dll 一并打包（API 层 DLL）。
+# 注意：这只能让 exe 自带该 DLL（不再依赖 System32 中的拷贝），
+# 真正与 CAN 硬件通信仍需要安装 Vector 驱动（内核驱动 + 服务）。
+_vector_dll = os.path.join(
+    os.environ.get("SystemRoot", r"C:\Windows"), "System32", "vxlapi64.dll"
+)
+_binaries = [(_vector_dll, '.')] if os.path.isfile(_vector_dll) else []
 
 a = Analysis(
-    ['main.py'],
+    ['Main.py'],
     pathex=[],
-    binaries=[],
+    binaries=_binaries,
     datas=[
         ('System3.dbc', '.'),
         ('appicon.ico', '.'),
