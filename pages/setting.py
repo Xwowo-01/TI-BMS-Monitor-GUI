@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from language_manager import language_manager
+import theme
 
 
 # 日志重定向类（线程安全）
@@ -63,6 +64,14 @@ class UITextZH:
     DATA_BITRATE = "数据域波特率"
     RECONNECT_CAN = "重新连接 CAN"
     LOG_TITLE = "实时日志"
+    SECTION_CAN = "CAN 配置"
+    SECTION_LOG = "实时日志"
+    CAN_HELP = "CAN 通道与波特率参数，需与总线及 Vector 硬件配置一致"
+    LOG_HELP = "程序运行日志（stdout / stderr 实时捕获）"
+    APP_NAME_HINT = "Vector Hardware Config 中创建的应用名"
+    CHANNEL_HINT = "通道序号（0 对应 CH1）"
+    ARB_HINT = "仲裁域波特率（bps）"
+    DATA_HINT = "数据域波特率（bps，CAN FD）"
 
 
 # English 文本
@@ -77,6 +86,14 @@ class UITextEN:
     DATA_BITRATE = "Data Bitrate"
     RECONNECT_CAN = "Reconnect CAN"
     LOG_TITLE = "Live Log"
+    SECTION_CAN = "CAN Configuration"
+    SECTION_LOG = "Live Log"
+    CAN_HELP = "CAN channel and bitrate parameters, must match the bus and Vector hardware config"
+    LOG_HELP = "Live application log (stdout / stderr capture)"
+    APP_NAME_HINT = "Application name created in Vector Hardware Config"
+    CHANNEL_HINT = "Channel index (0 = CH1)"
+    ARB_HINT = "Arbitration bitrate (bps)"
+    DATA_HINT = "Data bitrate (bps, CAN FD)"
 
 class SettingUI(QWidget):
     reconnect_requested = Signal(str, int, int, int)
@@ -95,28 +112,17 @@ class SettingUI(QWidget):
 
     # 构建 UI
     def setup_ui(self):
-        layout = QVBoxLayout(self)
-        # ---------- 顶部语言切换 ----------
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(12)
+
+        # 顶部语言切换（右对齐）
         top_layout = QHBoxLayout()
-        self.lang_label = QLabel(f"{self.current_text.LANGUAGE_TITLE}：")
-        self.lang_label.setStyleSheet("font-size: 13px; color: #555555;")
+        top_layout.addStretch(1)
+        self.lang_label = QLabel(self.current_text.LANGUAGE_TITLE)
+        self.lang_label.setStyleSheet("color:#475569; font-weight:600;")
         self.zh_btn = QPushButton(self.current_text.SWITCH_ZH)
         self.en_btn = QPushButton(self.current_text.SWITCH_EN)
-        btn_style = """
-            QPushButton {
-                border: 1px solid #C8C8C8;
-                border-radius: 4px;
-                padding: 4px 10px;
-                background: white;
-                color: #333333;
-            }
-            QPushButton:hover { background: #F5F5F5; }
-            QPushButton:pressed { background: #EAEAEA; }
-        """
-        self.zh_btn.setStyleSheet(btn_style)
-        self.en_btn.setStyleSheet(btn_style)
-        self.zh_btn.setFlat(True)
-        self.en_btn.setFlat(True)
         self.zh_btn.setCursor(Qt.PointingHandCursor)
         self.en_btn.setCursor(Qt.PointingHandCursor)
         self.zh_btn.clicked.connect(lambda: language_manager.set_language("zh"))
@@ -124,14 +130,25 @@ class SettingUI(QWidget):
         top_layout.addWidget(self.lang_label)
         top_layout.addWidget(self.zh_btn)
         top_layout.addWidget(self.en_btn)
-        top_layout.addStretch()
-        layout.addLayout(top_layout)
-        # ---------- CAN 配置表单 ----------
+        root.addLayout(top_layout)
+
+        main = QHBoxLayout()
+        main.setSpacing(12)
+
+        # CAN 配置卡
+        self.can_card = theme.Card(self.current_text.SECTION_CAN, help_text=self.current_text.CAN_HELP)
         form_layout = QFormLayout()
+        form_layout.setLabelAlignment(Qt.AlignRight)
+        form_layout.setHorizontalSpacing(12)
+        form_layout.setVerticalSpacing(12)
         self.app_name_edit = QLineEdit()
         self.channel_edit = QLineEdit()
         self.arb_bitrate_edit = QLineEdit()
         self.data_bitrate_edit = QLineEdit()
+        self.app_name_edit.setToolTip(self.current_text.APP_NAME_HINT)
+        self.channel_edit.setToolTip(self.current_text.CHANNEL_HINT)
+        self.arb_bitrate_edit.setToolTip(self.current_text.ARB_HINT)
+        self.data_bitrate_edit.setToolTip(self.current_text.DATA_HINT)
         self.app_name_label = QLabel(self.current_text.APP_NAME)
         self.channel_label = QLabel(self.current_text.CHANNEL)
         self.arb_label = QLabel(self.current_text.ARB_BITRATE)
@@ -140,29 +157,24 @@ class SettingUI(QWidget):
         form_layout.addRow(self.channel_label, self.channel_edit)
         form_layout.addRow(self.arb_label, self.arb_bitrate_edit)
         form_layout.addRow(self.data_label, self.data_bitrate_edit)
-        layout.addLayout(form_layout)
-        # ---------- 重连按钮 ----------
+        self.can_card.add_layout(form_layout)
+
         self.reconnect_btn = QPushButton(self.current_text.RECONNECT_CAN)
+        self.reconnect_btn.setObjectName("PrimaryButton")
         self.reconnect_btn.clicked.connect(self.on_reconnect_clicked)
-        layout.addWidget(self.reconnect_btn)
-        # ---------- 实时日志窗口（替换原来的“待补充”）----------
-        self.log_label = QLabel(self.current_text.LOG_TITLE)
-        self.log_label.setStyleSheet("font-weight: bold; margin-top: 10px;")
-        layout.addWidget(self.log_label)
+        self.can_card.add_widget(self.reconnect_btn)
+        self.can_card.body.addStretch(1)
+        main.addWidget(self.can_card, 1)
+
+        # 日志卡
+        self.log_card = theme.Card(self.current_text.SECTION_LOG, help_text=self.current_text.LOG_HELP)
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setLineWrapMode(QTextEdit.NoWrap)
-        self.log_text.setStyleSheet("""
-            QTextEdit {
-                background-color: #1e1e1e;
-                color: #d4d4d4;
-                font-family: "Consolas", "Courier New", monospace;
-                font-size: 12px;
-                border: 1px solid #3c3c3c;
-                border-radius: 4px;
-            }
-        """)
-        layout.addWidget(self.log_text, stretch=1)
+        self.log_card.add_widget(self.log_text, 1)
+        main.addWidget(self.log_card, 2)
+
+        root.addLayout(main, 1)
 
     # 日志槽函数（主线程安全）
     @Slot(str)
@@ -211,7 +223,7 @@ class SettingUI(QWidget):
 
     # 更新所有文本
     def update_ui_text(self):
-        self.lang_label.setText(f"{self.current_text.LANGUAGE_TITLE}：")
+        self.lang_label.setText(self.current_text.LANGUAGE_TITLE)
         self.zh_btn.setText(self.current_text.SWITCH_ZH)
         self.en_btn.setText(self.current_text.SWITCH_EN)
         self.app_name_label.setText(self.current_text.APP_NAME)
@@ -219,7 +231,14 @@ class SettingUI(QWidget):
         self.arb_label.setText(self.current_text.ARB_BITRATE)
         self.data_label.setText(self.current_text.DATA_BITRATE)
         self.reconnect_btn.setText(self.current_text.RECONNECT_CAN)
-        self.log_label.setText(self.current_text.LOG_TITLE)
+        self.can_card.title_label.setText(self.current_text.SECTION_CAN)
+        self.can_card.help_label.setText(self.current_text.CAN_HELP)
+        self.log_card.title_label.setText(self.current_text.SECTION_LOG)
+        self.log_card.help_label.setText(self.current_text.LOG_HELP)
+        self.app_name_edit.setToolTip(self.current_text.APP_NAME_HINT)
+        self.channel_edit.setToolTip(self.current_text.CHANNEL_HINT)
+        self.arb_bitrate_edit.setToolTip(self.current_text.ARB_HINT)
+        self.data_bitrate_edit.setToolTip(self.current_text.DATA_HINT)
 
     # 关闭时恢复原始 stdout/stderr
     def closeEvent(self, event):

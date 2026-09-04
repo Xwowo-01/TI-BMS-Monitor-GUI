@@ -15,6 +15,7 @@ class CANReceiver(QObject):
     message_received = Signal()
     error_occurred = Signal(str)
     data_updated = Signal(dict)
+    raw_message = Signal(object)   # 原始 can.Message（供报文监听显示）
     def __init__(
             self,
             app_name='VectorTest',
@@ -93,6 +94,7 @@ class CANReceiver(QObject):
     # 收到报文
     def _on_message_received(self, msg):
         self.message_received.emit()
+        self.raw_message.emit(msg)
         if self.db is not None:
             try:
                 decoded = self.db.decode_message(
@@ -102,6 +104,23 @@ class CANReceiver(QObject):
                 self.data_updated.emit(decoded)
             except Exception:
                 pass
+
+    # 发送一条 CAN 报文
+    def send_message(self, arbitration_id, data, is_extended_id=False):
+        """发送一条 CAN 报文（默认标准帧），返回是否成功。"""
+        if self.bus is None:
+            return False
+        try:
+            msg = can.Message(
+                arbitration_id=arbitration_id,
+                data=list(data),
+                is_extended_id=is_extended_id
+            )
+            self.bus.send(msg)
+            return True
+        except Exception as e:
+            print(f"CAN 发送失败: {e}")
+            return False
 
     # 停止
     def stop(self):

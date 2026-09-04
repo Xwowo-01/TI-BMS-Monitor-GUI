@@ -13,7 +13,10 @@ from PySide6.QtWidgets import (
     QApplication,
     QWidget,
     QVBoxLayout,
-    QTabWidget
+    QHBoxLayout,
+    QTabWidget,
+    QLabel,
+    QFrame
 )
 from pages import (
     BatteryMonitorUI,
@@ -23,6 +26,7 @@ from pages import (
 )
 from can_receiver import CANReceiver
 from language_manager import language_manager
+import theme
 import sys
 import os
 
@@ -35,6 +39,7 @@ def resource_path(relative_path):
 # 中文文本
 class UITextZH:
     WINDOW_TITLE = "电池监控系统"
+    WINDOW_SUBTITLE = "Battery Management System · CAN FD 监控上位机"
     TAB_OVERVIEW = "整体情况"
     TAB_SINGLE = "单体监测"
     TAB_SETTING = "配置管理"
@@ -47,6 +52,7 @@ class UITextZH:
 # English
 class UITextEN:
     WINDOW_TITLE = "Battery Monitoring System"
+    WINDOW_SUBTITLE = "Battery Management System · CAN FD Monitor"
     TAB_OVERVIEW = "Overview"
     TAB_SINGLE = "Single Monitor"
     TAB_SETTING = "Settings"
@@ -77,12 +83,27 @@ class MainWindow(QWidget):
         self.setWindowTitle(
             self.current_text.WINDOW_TITLE
         )
-        self.resize(800, 600)
+        self.setObjectName("Root")
+        self.setMinimumSize(1024, 680)
+        self.resize(1280, 800)
+
         main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # 顶部标题栏 + 连接状态
+        main_layout.addWidget(self._build_header())
+
+        # 页面容器：四周留白，让卡片与窗口边缘分离
+        tabs_container = QWidget()
+        tc_layout = QVBoxLayout(tabs_container)
+        tc_layout.setContentsMargins(16, 12, 16, 16)
+        tc_layout.setSpacing(0)
         # Tab
         self.tabs = QTabWidget()
         self.tabs.setTabPosition(QTabWidget.North)
         self.tabs.setMovable(False)
+        self.tabs.setDocumentMode(True)
         self.single_page = BatteryMonitorUI()
         self.overall_page = OverallStatusPage()
         self.setting_page = SettingUI()
@@ -103,7 +124,8 @@ class MainWindow(QWidget):
             self.bootloader_page,
             self.current_text.TAB_BOOTLOADER
         )
-        main_layout.addWidget(self.tabs)
+        tc_layout.addWidget(self.tabs)
+        main_layout.addWidget(tabs_container, 1)
         # 语言切换监听
         language_manager.language_changed.connect(self.switch_language)
         # 初始化页面语言
@@ -113,6 +135,7 @@ class MainWindow(QWidget):
         self.bootloader_page.finished_flash.connect( self.restart_can_after_flash)
         self.overall_page.cellClicked.connect(self.jump_to_single_monitor)
         self.setting_page.reconnect_requested.connect(self.reconnect_can)
+        self.single_page.eis_start_requested.connect(self.send_eis_start)
         self.can_receiver = None
         # UI刷新限频
         self.last_history_update = 0
@@ -141,11 +164,56 @@ class MainWindow(QWidget):
             )
             self.can_receiver.data_updated.connect(self.on_can_data_updated)
             self.can_receiver.message_received.connect(self.on_can_message_received)
+            self.can_receiver.raw_message.connect(self.bootloader_page.on_raw_message)
             self.overall_page.update_display()
         except Exception as e:
             print(f"{self.current_text.CAN_INIT_FAILED}: {e}")
             self.overall_page.data.connection_status = ("offline")
             self.overall_page.update_display()
+
+        self._update_header_status()
+
+    # 构建顶部标题栏
+    def _build_header(self):
+        header = QFrame()
+        header.setObjectName("HeaderBar")
+        header.setFixedHeight(58)
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(22, 0, 22, 0)
+        hl.setSpacing(12)
+
+        left = QVBoxLayout()
+        left.setSpacing(1)
+        self.header_title = QLabel(self.current_text.WINDOW_TITLE)
+        self.header_title.setObjectName("HeaderTitle")
+        left.addWidget(self.header_title)
+        self.header_subtitle = QLabel(self.current_text.WINDOW_SUBTITLE)
+        self.header_subtitle.setObjectName("HeaderSubtitle")
+        left.addWidget(self.header_subtitle)
+        hl.addLayout(left)
+        hl.addStretch(1)
+
+        self.header_status_dot = theme.StatusDot(theme.COLORS["text_muted"], 9)
+        self.header_status_label = QLabel(self.current_text.STATUS_OFFLINE)
+        self.header_status_label.setObjectName("HeaderSubtitle")
+        self.header_status_label.setStyleSheet("color:#cbd5e1; font-size:12px;")
+        hl.addWidget(self.header_status_dot)
+        hl.addWidget(self.header_status_label)
+        return header
+
+    # 更新顶栏连接状态
+    def _update_header_status(self):
+        status = self.overall_page.data.connection_status
+        self.header_status_dot.set_color(
+            theme.STATUS_COLOR.get(status, theme.COLORS["text_muted"])
+        )
+        if status == "connected":
+            text = self.current_text.STATUS_CONNECTED
+        elif status == "offline":
+            text = self.current_text.STATUS_OFFLINE
+        else:
+            text = status
+        self.header_status_label.setText(text)
 
     # 语言切换
     def switch_language(self, language):
@@ -161,10 +229,13 @@ class MainWindow(QWidget):
     # 更新 UI 文本
     def update_ui_text(self):
         self.setWindowTitle(self.current_text.WINDOW_TITLE)
+        self.header_title.setText(self.current_text.WINDOW_TITLE)
+        self.header_subtitle.setText(self.current_text.WINDOW_SUBTITLE)
         self.tabs.setTabText(0,self.current_text.TAB_OVERVIEW)
         self.tabs.setTabText(1,self.current_text.TAB_SINGLE)
         self.tabs.setTabText(2,self.current_text.TAB_SETTING)
         self.tabs.setTabText(3,self.current_text.TAB_BOOTLOADER)
+        self._update_header_status()
 
     # 低频刷新UI
     def refresh_ui(self):
@@ -172,6 +243,7 @@ class MainWindow(QWidget):
             self.overall_page.update_display()
             self.overall_page.update_all_matrices()
             self.single_page.update_data_display()   # 刷新单体页面左侧数据
+            self._update_header_status()
         except Exception as e:
             print(f"UI刷新错误: {e}")
 
@@ -197,6 +269,7 @@ class MainWindow(QWidget):
                 self.can_receiver = CANReceiver(dbc_path=dbc_path)
                 self.can_receiver.data_updated.connect(self.on_can_data_updated)
                 self.can_receiver.message_received.connect(self.on_can_message_received)
+                self.can_receiver.raw_message.connect(self.bootloader_page.on_raw_message)
                 self.overall_page.data.connection_status = ("connected")
                 self.overall_page.update_display()
                 print("CANReceiver 已重新初始化")
@@ -331,18 +404,39 @@ class MainWindow(QWidget):
             updated = True
 
         # ---------- EIS 数据解析（报文 ID 440） ----------
+        # # ---------- 优化后的 EIS 日志 ----------
+        # cell = signal_dict.get('Bat_EIS_CelNum')
+        # freq = signal_dict.get('Bat_EIS_Freq')
+        # real = signal_dict.get('BatCell_EIS_Z_Real')
+        # imag = signal_dict.get('BatCell_EIS_Z_Imag')
+        # finish = signal_dict.get('EISFinish')
+        # # 判断是否为有效数据点（编号 1~26，且实部或虚部至少一个非零）
+        # has_valid_data = (cell is not None and 1 <= cell <= 26 and (real != 0 or imag != 0))
+        # # 仅当有有效数据点或完成标志时打印
+        # if has_valid_data or finish is not None:
+        #     parts = []
+        #     if has_valid_data:
+        #         parts.append(f"电池{cell}, 频率{freq}Hz, 实部{real}, 虚部{imag}")
+        #     if finish is not None:
+        #         # 将 finish 转为字符串并去除可能的前后空格，便于阅读
+        #         finish_str = str(finish).strip()
+        #         parts.append(f"完成状态: {finish_str}")
+        #     print("EIS:", " | ".join(parts))
+
         # 解析 EIS 数据点（实部虚部）
         if 'Bat_EIS_CelNum' in signal_dict and 'BatCell_EIS_Z_Real' in signal_dict and 'BatCell_EIS_Z_Imag' in signal_dict:
             cell_num = int(signal_dict['Bat_EIS_CelNum'])
             # 频率因子 0.01，单位 Hz
-            freq = signal_dict.get('Bat_EIS_Freq', 0.0) * 0.01
+            freq = signal_dict.get('Bat_EIS_Freq', 0.0)
             real = signal_dict['BatCell_EIS_Z_Real']
             imag = signal_dict['BatCell_EIS_Z_Imag']
             self.single_page.receive_eis_point(cell_num, freq, real, imag)
 
         # 解析 EIS 完成标志
-        if 'EISFinish' in signal_dict and signal_dict['EISFinish'] == 1:
-            self.single_page.on_eis_finish()
+        if 'EISFinish' in signal_dict:
+            finish_str = str(signal_dict['EISFinish']).strip()
+            if finish_str == 'Sampling Completed':
+                self.single_page.on_eis_finish()
 
         # 数据更新（不直接刷新UI）
         if updated:
@@ -368,10 +462,29 @@ class MainWindow(QWidget):
     # 跳转单体监测页
     def jump_to_single_monitor(self, battery_name):
         self.tabs.setCurrentWidget(self.single_page)
-        print(
-            f"{self.current_text.JUMP_TO_MONITOR}: "
-            f"{battery_name}"
-        )
+        # 同步单体页下拉框到点击的电芯序号
+        try:
+            num = int(''.join(ch for ch in battery_name if ch.isdigit()))
+            count = self.single_page.battery_select.count()
+            if count > 0:
+                self.single_page.battery_select.setCurrentIndex(
+                    max(0, min(num - 1, count - 1))
+                )
+        except ValueError:
+            pass
+
+    # 发送 EIS 启动报文
+    def send_eis_start(self):
+        """由上位机向 BMS 发送 EIS 启动报文（CPU_UASGE，ID 0x11）。
+        信号 EIS Start 位于字节 0 位 7（1 bit），置 1 触发 EIS 采集。"""
+        if self.can_receiver:
+            data = [0x80, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+            if self.can_receiver.send_message(0x11, data):
+                print("EIS 启动报文已发送 (0x11)")
+            else:
+                print("EIS 启动报文发送失败：CAN 未连接")
+        else:
+            print("EIS 启动报文发送失败：CAN 未连接")
 
     # 关闭
     def closeEvent(self, event):
@@ -402,6 +515,7 @@ class MainWindow(QWidget):
             )
             self.can_receiver.data_updated.connect(self.on_can_data_updated)
             self.can_receiver.message_received.connect(self.on_can_message_received)
+            self.can_receiver.raw_message.connect(self.bootloader_page.on_raw_message)
             self.overall_page.data.connection_status = ("connected")
             self.overall_page.update_display()
             print("CAN 重连成功")
@@ -413,6 +527,9 @@ class MainWindow(QWidget):
 # Main
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    app.setStyleSheet(theme.APP_STYLESHEET)
     w = MainWindow()
     w.show()
+    # show 后再强制一次初始尺寸，确保布局稳定后仍为 1280x800
+    QTimer.singleShot(0, lambda: w.resize(1280, 800))
     sys.exit(app.exec())

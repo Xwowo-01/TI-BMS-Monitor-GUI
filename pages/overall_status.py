@@ -3,7 +3,7 @@
 import random
 from datetime import datetime
 from typing import List
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Qt
 from PySide6.QtGui import QFont, QColor
 from PySide6.QtWidgets import (
     QWidget,
@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QGraphicsDropShadowEffect
 )
 from widgets import CircularGauge, BatteryCell, TrendChartWidget
+import theme
 
 # 中文文本
 class UITextZH:
@@ -85,6 +86,13 @@ class UITextZH:
     TREND_TITLE = "整体 SoC / SoH 趋势"
     TREND_X = "历史采样点 (最近→最旧)"
     TREND_Y = "百分比 (%)"
+    # 分区标题
+    SECTION_PACK = "整包概览"
+    SECTION_DIAG = "诊断与统计"
+    SECTION_SYSTEM = "系统信息"
+    PACK_HELP = "整包 SoC / SoH、容量与电芯统计"
+    DIAG_HELP = "故障诊断、温度与电压统计"
+    MATRIX_HINT = "点击任意电芯可跳转到单体监测页"
 
 # English
 class UITextEN:
@@ -155,6 +163,13 @@ class UITextEN:
     TREND_TITLE = "Overall SoC / SoH Trend"
     TREND_X = "History Samples (Newest → Oldest)"
     TREND_Y = "Percentage (%)"
+    # 分区标题
+    SECTION_PACK = "Pack Overview"
+    SECTION_DIAG = "Diagnosis & Statistics"
+    SECTION_SYSTEM = "System Info"
+    PACK_HELP = "Pack SoC/SOH, capacity and cell statistics"
+    DIAG_HELP = "Fault diagnosis, temperature and voltage statistics"
+    MATRIX_HINT = "Click any cell to open single monitor"
 
 # 数据
 class OverallStatusData:
@@ -309,63 +324,92 @@ class OverallStatusPage(QWidget):
 
     # UI 构建
     def _setup_ui(self):
-        main = QHBoxLayout(self)
-        main.setStretch(0, 1)
-        main.setStretch(1, 2)
-        # LEFT
-        left = QWidget()
-        lv = QVBoxLayout(left)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(12)
+
+        # 页标题
         self.title_label = QLabel(self.ui_text.PAGE_TITLE)
-        self.title_label.setFont(QFont("Arial", 16, QFont.Bold))
-        lv.addWidget(self.title_label)
-        self.summary_label = QLabel()
-        self.summary_label.setFont(QFont("Arial", 11))
-        lv.addWidget(self.summary_label)
-        gauge_layout = QGridLayout()
-        gauge_layout.setHorizontalSpacing(20)
-        gauge_layout.setVerticalSpacing(10)
+        self.title_label.setFont(QFont("Arial", 15, QFont.Bold))
+        self.title_label.setStyleSheet("color:#111827;")
+        root.addWidget(self.title_label)
+
+        main = QHBoxLayout()
+        main.setSpacing(12)
+
+        # ---------------- 左侧信息栏 ----------------
+        left = QWidget()
+        left.setMinimumWidth(320)
+        left.setMaximumWidth(410)
+        lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(12)
+
+        # 卡1：整包概览
+        self.pack_card = theme.Card(self.ui_text.SECTION_PACK, help_text=self.ui_text.PACK_HELP)
+
+        gauge_row = QHBoxLayout()
+        gauge_row.setSpacing(8)
         self.total_energy_gauge = CircularGauge(self.ui_text.SOC, self.ui_text.TOTAL_ENERGY, 0)
         self.total_soh_gauge = CircularGauge(self.ui_text.SOH, self.ui_text.HEALTH_STATUS, 0)
+        gauge_row.addStretch(1)
+        gauge_row.addWidget(self.total_energy_gauge, 0, Qt.AlignCenter)
+        gauge_row.addStretch(1)
+        gauge_row.addWidget(self.total_soh_gauge, 0, Qt.AlignCenter)
+        gauge_row.addStretch(1)
+        self.pack_card.add_layout(gauge_row)
+
+        # 信息文字：左右两栏，放在圆环下方
+        info_row = QHBoxLayout()
+        info_row.setSpacing(12)
+        self.summary_label = QLabel()
+        self.summary_label.setFont(QFont("Arial", 10))
+        self.summary_label.setTextFormat(Qt.TextFormat.RichText)
+        self.summary_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
         self.total_energy_label = QLabel()
-        self.total_energy_label.setFont(QFont("Arial", 9))
+        self.total_energy_label.setFont(QFont("Arial", 10))
+        self.total_energy_label.setTextFormat(Qt.TextFormat.RichText)
+        self.total_energy_label.setAlignment(Qt.AlignLeft | Qt.AlignTop)
+        info_row.addWidget(self.summary_label, 1)
+        info_row.addWidget(self.total_energy_label, 1)
+        self.pack_card.add_layout(info_row)
+        lv.addWidget(self.pack_card)
+
+        # 卡2：诊断与统计
+        self.diag_card = theme.Card(self.ui_text.SECTION_DIAG, help_text=self.ui_text.DIAG_HELP)
         self.total_soh_label = QLabel()
-        self.total_soh_label.setFont(QFont("Arial", 9))
-        from PySide6.QtCore import Qt
+        self.total_soh_label.setFont(QFont("Arial", 10))
         self.total_soh_label.setTextFormat(Qt.TextFormat.RichText)
-        gauge_layout.addWidget(self.total_energy_gauge, 0, 0)
-        gauge_layout.addWidget(self.total_energy_label, 0, 1)
-        gauge_layout.addWidget(self.total_soh_gauge, 1, 0)
-        gauge_layout.addWidget(self.total_soh_label, 1, 1)
-        gauge_layout.setColumnStretch(0, 1)
-        gauge_layout.setColumnStretch(1, 2)
-        lv.addLayout(gauge_layout)
-        stats_layout = QHBoxLayout()
+        self.diag_card.add_widget(self.total_soh_label)
+
+        stats_row = QHBoxLayout()
+        stats_row.setSpacing(10)
         self.temp_label = QLabel()
         self.temp_label.setFont(QFont("Arial", 10))
+        self.temp_label.setTextFormat(Qt.TextFormat.RichText)
         self.volt_label = QLabel()
         self.volt_label.setFont(QFont("Arial", 10))
-        stats_layout.addWidget(self.temp_label)
-        stats_layout.addWidget(self.volt_label)
-        lv.addLayout(stats_layout)
-        line = QFrame()
-        line.setFixedHeight(1)
-        line.setStyleSheet("background-color: rgba(200,200,200,150);")
-        lv.addWidget(line)
-        bottom_layout = QHBoxLayout()
-        info_layout = QVBoxLayout()
+        self.volt_label.setTextFormat(Qt.TextFormat.RichText)
+        stats_row.addWidget(self.temp_label, 1)
+        stats_row.addWidget(self.volt_label, 1)
+        self.diag_card.add_layout(stats_row)
+        lv.addWidget(self.diag_card)
+
+        # 卡3：系统信息
+        self.sys_card = theme.Card(self.ui_text.SECTION_SYSTEM)
         self.info_labels = []
         for _ in range(4):
             lbl = QLabel()
             lbl.setFont(QFont("Arial", 10))
-            info_layout.addWidget(lbl)
+            lbl.setTextFormat(Qt.TextFormat.RichText)
+            self.sys_card.add_widget(lbl)
             self.info_labels.append(lbl)
-        bottom_layout.addLayout(info_layout)
-        bottom_layout.addStretch()
-        lv.addSpacing(15)
-        lv.addLayout(bottom_layout)
-        lv.addStretch()
-        main.addWidget(left)
-        # RIGHT
+        lv.addWidget(self.sys_card)
+
+        lv.addStretch(1)
+        main.addWidget(left, 1)
+
+        # ---------------- 右侧可视化区 ----------------
         right = QWidget()
         right_layout = QGridLayout(right)
         right_layout.setSpacing(12)
@@ -389,31 +433,16 @@ class OverallStatusPage(QWidget):
         right_layout.setRowStretch(1, 1)
         right_layout.setColumnStretch(0, 1)
         right_layout.setColumnStretch(1, 1)
-        main.addWidget(right)
+        main.addWidget(right, 2)
+
+        root.addLayout(main, 1)
 
     def _create_matrix_block_with_cells(self, title, values, mode="SoC"):
-        outer = QFrame()
-        outer.setStyleSheet("""
-            QFrame {
-                background-color: white;
-                border-radius: 8px;
-            }
-        """)
-        shadow = QGraphicsDropShadowEffect(outer)
-        shadow.setBlurRadius(16)
-        shadow.setXOffset(0)
-        shadow.setYOffset(2)
-        shadow.setColor(QColor(0, 0, 0, 60))
-        outer.setGraphicsEffect(shadow)
-        layout = QVBoxLayout(outer)
-        layout.setContentsMargins(12, 12, 12, 12)
-        title_label = QLabel(title)
-        title_label.setFont(QFont("Arial", 13, QFont.Bold))
-        outer.title_label = title_label
-        layout.addWidget(title_label)
+        card = theme.Card(title=title, help_text=self.ui_text.MATRIX_HINT)
 
         grid = QGridLayout()
-        grid.setSpacing(5)
+        grid.setSpacing(8)
+        grid.setAlignment(Qt.AlignCenter)
         cells = []
         rows, cols = 4, 7
         for idx in range(26):
@@ -429,12 +458,13 @@ class OverallStatusPage(QWidget):
             grid.addWidget(cell, row, col)
             cells.append(cell)
             cell.clicked.connect(self.cellClicked.emit)
-        layout.addLayout(grid)
+        card.add_layout(grid, 1)
+
         legend = QLabel(self.ui_text.LEGEND_TEXT)
-        legend.setStyleSheet("color: gray; font-size: 10px; margin-top: 6px;")
-        outer.legend_label = legend
-        layout.addWidget(legend)
-        return outer, cells
+        legend.setStyleSheet("color:#8a94a3; font-size:10px;")
+        card.body.addWidget(legend)
+        card.legend_label = legend
+        return card, cells
 
     # 语言切换
     def switch_language(self, language="zh"):
@@ -446,6 +476,14 @@ class OverallStatusPage(QWidget):
 
     def retranslate_ui(self):
         self.title_label.setText(self.ui_text.PAGE_TITLE)
+        self.pack_card.title_label.setText(self.ui_text.SECTION_PACK)
+        self.pack_card.help_label.setText(self.ui_text.PACK_HELP)
+        self.diag_card.title_label.setText(self.ui_text.SECTION_DIAG)
+        self.diag_card.help_label.setText(self.ui_text.DIAG_HELP)
+        self.sys_card.title_label.setText(self.ui_text.SECTION_SYSTEM)
+        self.soc_widget.help_label.setText(self.ui_text.MATRIX_HINT)
+        self.temp_widget.help_label.setText(self.ui_text.MATRIX_HINT)
+        self.volt_widget.help_label.setText(self.ui_text.MATRIX_HINT)
         self.total_energy_gauge.set_texts(self.ui_text.SOC, self.ui_text.TOTAL_ENERGY)
         self.total_soh_gauge.set_texts(self.ui_text.SOH, self.ui_text.HEALTH_STATUS)
         self.soc_widget.title_label.setText(self.ui_text.MATRIX_SOC)

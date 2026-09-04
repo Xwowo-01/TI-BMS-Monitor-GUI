@@ -5,17 +5,23 @@ from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QWidget,  QSizePolicy
 )
-from PySide6.QtCore import Qt, QRect,QPoint,QPointF,QMargins
+from PySide6.QtCore import Qt, QRect, QPoint, QPointF, QMargins
 from PySide6.QtGui import QPainter, QPen, QColor, QFont,QRadialGradient,QBrush
 import pyqtgraph as pg
+import theme
 from PySide6.QtCore import Signal
 from PySide6.QtCharts import QChartView, QChart, QLineSeries, QValueAxis
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QVBoxLayout, QWidget, QLabel
 from PySide6.QtGui import QColor, QPainter
+
+# ================= 趋势图参数（脚本开头可微调） =================
+TREND_Y_RANGE = (0, 104)          # SoC/SoH 趋势图 Y 轴范围（锁定）
+TREND_EDGE_LABEL_FONT_SIZE = 9    # 手动标注 0% / 100% 的字号
+
 # ================= 吸附显示最近数据点 =================
 class SnapScatterItem(pg.ScatterPlotItem):
-    def __init__(self, x, y, fmt="x={:.2f}\ny={:.2f}", threshold=0.5):
+    def __init__(self, x, y, fmt="x={:.2f}\ny={:.2f}", threshold=5):
         super().__init__(x=x, y=y, size=3, brush=pg.mkBrush("#2ECC71"))
         self.x = np.array(x)
         self.y = np.array(y)
@@ -68,8 +74,7 @@ class CircularGauge(QWidget):
         self.value = value
         self.title = title
         self.subtitle = subtitle
-        self.setMinimumSize(120, 120)
-        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.setFixedSize(150, 150)
 
     def setValue(self, value: int):
         self.value = max(0, min(100, value))
@@ -107,7 +112,7 @@ class CircularGauge(QWidget):
         )
         # 发光效果实现：沿圆弧采样，绘制小半透明圆叠加
         glow_radius = 12  # 发光半径
-        steps = int(360 * self.value / 100)+12  # 圆弧采样点数
+        steps = int(360 * self.value / 100) + 12  # 圆弧采样点数
         start_angle = 95  # 逆时针从顶部开始
         for i in range(steps + 1):
             angle = math.radians(start_angle - i)
@@ -118,12 +123,12 @@ class CircularGauge(QWidget):
             y = center.y() - r * math.sin(angle)
             # 发光渐变圆
             gradient = QRadialGradient(QPointF(x, y), glow_radius)
-            gradient.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), 15))  # 中心亮
-            gradient.setColorAt(1, QColor(color.red(), color.green(), color.blue(), 0))  # 边缘透明
+            gradient.setColorAt(0.0, QColor(color.red(), color.green(), color.blue(), 15))
+            gradient.setColorAt(1, QColor(color.red(), color.green(), color.blue(), 0))
             painter.setBrush(QBrush(gradient))
             painter.setPen(Qt.NoPen)
             painter.drawEllipse(QPointF(x, y), glow_radius, glow_radius)
-        # ---------- 文本 ----------
+        # ---------- 文本（SOC / SOH 标题在圆环上） ----------
         textRect = QRect(
             center.x() - side // 2,
             center.y() - side // 2,
@@ -154,8 +159,8 @@ class BatteryCell(QWidget):
         self.charging = charging
         self.mode = mode          # "SoC" / "Temp" / "Volt" / "SoH"
         self.name = name          # 例："1", "25"
-        # 高度增加以放置底部编号
-        self.setFixedSize(14, 32)
+        # 固定尺寸（不随窗口缩放）
+        self.setFixedSize(46, 48)
         self.setMouseTracking(True)
         # 提取数字编号（从名称中获取纯数字部分）
         try:
@@ -248,28 +253,46 @@ class BatteryCell(QWidget):
                 color = QColor("#F39C12")
             else:
                 color = QColor("#2ECC71")
-        # ---- 电池主体 ----
+        # ---- 横向矩形电池（按控件实际尺寸自适应缩放） ----
+        W = self.width()
+        H = self.height()
+        nub_w = max(3, int(W * 0.10))
+        body_w = max(16, int(W * 0.66))
+        body_h = max(10, int(H * 0.34))
+        total_w = body_w + nub_w
+        body_x = max(1, (W - total_w) // 2)
+        body_y = int(H * 0.30)
+        body_radius = 2
+
         p.setBrush(color)
         p.setPen(Qt.NoPen)
-        # 主体矩形 (x=2, y=6, w=10, h=16)
-        p.drawRoundedRect(2, 6, 10, 16, 2, 2)
-        # 上方小凸起 (x=5, y=3, w=3, h=2)
-        p.drawRoundedRect(5, 3, 3, 2, 1, 1)
-        # ---- 充电闪电 (仅 SoC 模式) ----
+        # 主体（横向宽矩形）
+        p.drawRoundedRect(body_x, body_y, body_w, body_h, body_radius, body_radius)
+        # 右侧正极端子（小凸起）
+        nub_h = max(4, int(body_h * 0.42))
+        nub_x = body_x + body_w
+        nub_y = body_y + (body_h - nub_h) // 2
+        p.drawRoundedRect(nub_x, nub_y, nub_w, nub_h, 1, 1)
+
+        # ---- 充电闪电 (仅 SoC 模式，横向) ----
         if self.charging and self.mode == "SoC":
-            p.setPen(QPen(QColor("white"), 1))
-            # 闪电线条（在电池内部）
-            p.drawLine(7, 6, 5.5, 12)
-            p.drawLine(7, 6, 6.5, 12)
-            p.drawLine(5.5, 12, 9.5, 12)
-            p.drawLine(8, 12, 7, 18)
-            p.drawLine(9.5, 12, 7, 18)
+            lw = max(1, body_h // 8)
+            p.setPen(QPen(QColor("white"), lw))
+            bx, by, bw, bh = body_x, body_y, body_w, body_h
+            p.drawLine(int(bx + bw * 0.22), int(by + bh * 0.12),
+                       int(bx + bw * 0.48), int(by + bh * 0.55))
+            p.drawLine(int(bx + bw * 0.48), int(by + bh * 0.55),
+                       int(bx + bw * 0.44), int(by + bh * 0.88))
+            p.drawLine(int(bx + bw * 0.48), int(by + bh * 0.55),
+                       int(bx + bw * 0.78), int(by + bh * 0.30))
+
         # ---- 底部数字编号 ----
         p.setPen(QColor(160, 160, 160))                # 浅灰色
-        font = QFont("Arial", 7)
+        font_size = max(7, int(H * 0.20))
+        font = QFont("Arial", font_size)
         p.setFont(font)
-        # 绘制区域为整个 widget 底部约 10 像素高度
-        text_rect = self.rect().adjusted(0, 22, 0, 0)
+        # 绘制区域为整个 widget 底部约 30% 高度
+        text_rect = QRect(0, int(H * 0.70), W, int(H * 0.30))
         p.drawText(text_rect, Qt.AlignHCenter | Qt.AlignTop, str(self.index))
 
 from collections import deque
@@ -311,22 +334,22 @@ class TrendChartWidget(QWidget):
         """)
         self.layout.addWidget(self.label_soc)
         self.soc_plot = pg.PlotWidget()
-        self.soc_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        theme.setup_plot(self.soc_plot, min_height=80)
         self.soc_plot.showGrid(x=True, y=True, alpha=0.2)
         self.soc_plot.setLabel("left", "")
         self.soc_plot.setLabel("bottom", "")
         self.soc_plot.getAxis("left").setTicks([[
-            (0, "0%"), (20, "20%"), (40, "40%"),
-            (60, "60%"), (80, "80%"), (100, "100%")
+            (0, ""), (20, "20%"), (40, "40%"), (60, "60%"), (80, "80%"), (100, "")
         ]])
-        self.soc_plot.setYRange(0, 101)
+        self.soc_plot.setYRange(*TREND_Y_RANGE)
         vb_soc = self.soc_plot.getViewBox()
         vb_soc.setMouseEnabled(x=True, y=False)
         vb_soc.enableAutoRange(axis='x', enable=True)
         vb_soc.enableAutoRange(axis='y', enable=False)
         # ✔ 强制锁死Y轴（关键）
-        vb_soc.setYRange(0, 101, padding=0)
-        vb_soc.setLimits(xMin=0, yMin=0, yMax=101)
+        vb_soc.setYRange(*TREND_Y_RANGE, padding=0)
+        vb_soc.setLimits(xMin=0, yMin=TREND_Y_RANGE[0], yMax=TREND_Y_RANGE[1])
+        self._add_y_edge_labels(self.soc_plot)
         self.soc_curve = self.soc_plot.plot([], [], pen=pg.mkPen("#3498DB", width=2))
         self.layout.addWidget(self.soc_plot, 1)
         # ✔ SoH
@@ -340,24 +363,49 @@ class TrendChartWidget(QWidget):
         """)
         self.layout.addWidget(self.label_soh)
         self.soh_plot = pg.PlotWidget()
-        self.soh_plot.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        theme.setup_plot(self.soh_plot, min_height=80)
         self.soh_plot.showGrid(x=True, y=True, alpha=0.2)
         self.soh_plot.setLabel("left", "")
         self.soh_plot.setLabel("bottom", "")
         self.soh_plot.getAxis("left").setTicks([[
-            (0, "0%"), (20, "20%"), (40, "40%"),
-            (60, "60%"), (80, "80%"), (100, "100%")
+            (0, ""), (20, "20%"), (40, "40%"), (60, "60%"), (80, "80%"), (100, "")
         ]])
-        self.soh_plot.setYRange(0, 101)
+        self.soh_plot.setYRange(*TREND_Y_RANGE)
         vb_soh = self.soh_plot.getViewBox()
         vb_soh.setMouseEnabled(x=True, y=False)
         vb_soh.enableAutoRange(axis='x', enable=True)
         vb_soh.enableAutoRange(axis='y', enable=False)
         # ✔ 强制锁死Y轴（关键）
-        vb_soh.setYRange(0, 101, padding=0)
-        vb_soh.setLimits(xMin=0, yMin=0, yMax=101)
+        vb_soh.setYRange(*TREND_Y_RANGE, padding=0)
+        vb_soh.setLimits(xMin=0, yMin=TREND_Y_RANGE[0], yMax=TREND_Y_RANGE[1])
+        self._add_y_edge_labels(self.soh_plot)
         self.soh_curve = self.soh_plot.plot([], [], pen=pg.mkPen("#2ECC71", width=2))
         self.layout.addWidget(self.soh_plot, 1)
+
+    def _add_y_edge_labels(self, plot):
+        """手动在 Y 轴左边缘标注 0% 和 100%。
+
+        Y 轴已锁定（0~100），故只需在 X 轴自动缩放时更新标签的 X 位置，
+        使其始终贴住视区左边缘；字体、字号与轴刻度保持一致。
+        """
+        vb = plot.getViewBox()
+        # 关闭子项裁剪，否则延伸到坐标轴边距内的文字会被裁掉
+        vb.setFlag(vb.GraphicsItemFlag.ItemClipsChildrenToShape, False)
+
+        labels = []
+        for y, text in [(0, "0%"), (100, "100%")]:
+            label = pg.TextItem(text=text, anchor=(1, 0.5), color="#111827")
+            label.setFont(QFont("Arial", TREND_EDGE_LABEL_FONT_SIZE))
+            plot.addItem(label, ignoreBounds=True)
+            labels.append((label, y))
+
+        def _reposition(*_args):
+            left_x = vb.viewRange()[0][0]
+            for label, y in labels:
+                label.setPos(left_x, y)
+
+        vb.sigRangeChanged.connect(_reposition)
+        _reposition()
 
     def switch_language(self, language="zh"):
         if language == "en":
@@ -400,3 +448,46 @@ class TrendChartWidget(QWidget):
             self.soc_plot.setXRange(0, 20, padding=0)
             self.soh_plot.setXRange(0, 20, padding=0)
             self.first_update = False
+# 在 widgets.py 末尾添加
+
+class EISScatterItem(pg.ScatterPlotItem):
+    def __init__(self, reals, imags, freqs, fmt="Freq={freq:.2f} Hz\nRe={real:.2f}\nIm={imag:.2f}", threshold=50):
+        # 构建点列表
+        spots = [{'pos': (reals[i], imags[i]), 'size': 6, 'brush': pg.mkBrush("#2ECC71")} for i in range(len(reals))]
+        super().__init__(spots=spots)
+        self.reals = np.array(reals, dtype=float)
+        self.imags = np.array(imags, dtype=float)
+        self.freqs = np.array(freqs, dtype=float)
+        self.fmt = fmt
+        self.threshold = threshold
+
+        # 文本提示（白色背景，带边框）
+        self.text = pg.TextItem(anchor=(0, 1))
+        self.text.setFont(QFont("Arial", 10, QFont.Bold))
+        self.text.setColor(QColor("#222222"))
+        self.text.setHtml("""<div style="background-color:white;padding:4px 6px;border:1px solid #CFCFCF;border-radius:4px;"></div>""")
+        # ★★★ 关键修复：将文本项设置为散点项的子项 ★★★
+        self.text.setParentItem(self)
+        self.text.hide()
+
+    def hoverEvent(self, ev):
+        if ev.isExit():
+            self.text.hide()
+            return
+        pos = ev.pos()
+        # 计算所有点到鼠标的距离
+        dist = np.hypot(self.reals - pos.x(), self.imags - pos.y())
+        if len(dist) == 0:
+            return
+        idx = np.argmin(dist)
+        if dist[idx] < self.threshold:
+            html = f"""
+                <div style="background-color:white;padding:4px 6px;border:1px solid #CFCFCF;border-radius:4px;">
+                {self.fmt.format(freq=self.freqs[idx], real=self.reals[idx], imag=self.imags[idx])}
+                </div>
+            """
+            self.text.setHtml(html)
+            self.text.setPos(self.reals[idx], self.imags[idx])
+            self.text.show()
+        else:
+            self.text.hide()

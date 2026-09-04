@@ -5,7 +5,7 @@ from typing import List, Optional
 from datetime import datetime
 import numpy as np
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget,
@@ -22,7 +22,8 @@ from PySide6.QtWidgets import (
 
 import pyqtgraph as pg
 
-from widgets import CircularGauge, SnapScatterItem
+from widgets import CircularGauge, SnapScatterItem, EISScatterItem
+import theme
 
 # ===================== 数据类 =====================
 class SingleCellStatusData:
@@ -180,7 +181,7 @@ class SingleCellStatusData:
 # ===================== UI 文本 =====================
 class UITextZH:
     WINDOW_TITLE = "电池监控系统"
-    PAGE_TITLE = "实时监测(仅示例)"
+    PAGE_TITLE = "实时监测"
     BATTERY_LABEL = "电池"
     CHARGING_INFO_CAP = "剩余容量"
     CHARGING_INFO_FULL = "满充容量"
@@ -206,10 +207,14 @@ class UITextZH:
     ACQ_STATUS_PREFIX = "状态："
     ACQ_BTN_START = "开始采集"
     ACQ_BTN_STOP = "停止采集"
+    CELL_CARD_TITLE = "单体电池"
+    CELL_HELP = "选择电芯，查看其 SoC、容量、温度与电压"
+    ACQ_VT_HELP = "记录所选电芯的电压 / 温度历史曲线"
+    ACQ_EIS_HELP = "EIS 交流阻抗测量，绘制奈奎斯特图"
 
 class UITextEN:
     WINDOW_TITLE = "Battery Monitoring System"
-    PAGE_TITLE = "Real-Time Monitor (Sample Only)"
+    PAGE_TITLE = "Real-Time Monitor"
     BATTERY_LABEL = "Battery"
     CHARGING_INFO_CAP = "Remaining Capacity"
     CHARGING_INFO_FULL = "Full Capacity"
@@ -235,9 +240,14 @@ class UITextEN:
     ACQ_STATUS_PREFIX = "Status:"
     ACQ_BTN_START = "Start"
     ACQ_BTN_STOP = "Stop"
+    CELL_CARD_TITLE = "Single Cell"
+    CELL_HELP = "Select a cell to view SoC, capacity, temperature and voltage"
+    ACQ_VT_HELP = "Record voltage/temperature history of the selected cell"
+    ACQ_EIS_HELP = "EIS impedance measurement, plot Nyquist diagram"
 
 # ===================== UI 主类 =====================
 class BatteryMonitorUI(QWidget):
+    eis_start_requested = Signal()   # 请求上位机发送 EIS 启动报文
     def __init__(self):
         super().__init__()
         self.ui_text = UITextZH
@@ -253,6 +263,7 @@ class BatteryMonitorUI(QWidget):
         pg.setConfigOption("background", "w")
 
         self.expanded_frame = None
+        self.eis_last_point_label = None  # 用于显示最近EIS点
         self.setup_ui()
 
         # 更新初始显示
@@ -266,64 +277,58 @@ class BatteryMonitorUI(QWidget):
         self._update_acq_status()
 
     def setup_ui(self):
-        main = QHBoxLayout(self)
-        main.setStretch(0, 1)
-        main.setStretch(1, 3)
+        root = QVBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(12)
+
+        # 页标题
+        self.title_label = QLabel(self.ui_text.PAGE_TITLE)
+        self.title_label.setFont(QFont("Arial", 15, QFont.Bold))
+        self.title_label.setStyleSheet("color:#111827;")
+        root.addWidget(self.title_label)
+
+        main = QHBoxLayout()
+        main.setSpacing(12)
 
         # ========== LEFT ==========
         left = QWidget()
+        left.setMinimumWidth(300)
+        left.setMaximumWidth(360)
         lv = QVBoxLayout(left)
+        lv.setContentsMargins(0, 0, 0, 0)
+        lv.setSpacing(12)
 
-        # 标题
-        self.title_label = QLabel(self.ui_text.PAGE_TITLE)
-        self.title_label.setFont(QFont("Arial", 16, QFont.Bold))
-        lv.addWidget(self.title_label)
-
-        # 电池选择
+        # 卡1：单体电池
+        self.cell_card = theme.Card(self.ui_text.CELL_CARD_TITLE, help_text=self.ui_text.CELL_HELP)
         self.battery_select = QComboBox()
         self.update_battery_combo()
-        self.battery_select.setMinimumHeight(32)
+        self.battery_select.setMinimumHeight(30)
         self.battery_select.currentIndexChanged.connect(self.on_battery_changed)
-        lv.addWidget(self.battery_select)
-
-        # ---------- 圆环图 + 信息（垂直居中） ----------
-        soc_container = QWidget()
-        soc_container_layout = QVBoxLayout(soc_container)
-        soc_container_layout.setAlignment(Qt.AlignCenter)
+        self.cell_card.add_widget(self.battery_select)
 
         self.soc_gauge = CircularGauge(
             self.ui_text.SOC_TITLE,
             self.ui_text.SOC_SUBTITLE,
             0
         )
-        soc_container_layout.addWidget(self.soc_gauge, alignment=Qt.AlignCenter)
+        self.cell_card.add_widget(self.soc_gauge, alignment=Qt.AlignCenter)
 
         self.info_label = QLabel()
         self.info_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         self.info_label.setTextFormat(Qt.RichText)
         self.info_label.setStyleSheet("font-size: 10pt;")
-        soc_container_layout.addWidget(self.info_label, alignment=Qt.AlignLeft | Qt.AlignVCenter)
+        self.cell_card.add_widget(self.info_label)
+        lv.addWidget(self.cell_card)
 
-        lv.addWidget(soc_container)
-        lv.addStretch()
-
-        # ---------- 采集控制卡片 ----------
-        acq_card = QFrame()
-        acq_card.setFrameShape(QFrame.StyledPanel)
-        acq_card.setStyleSheet("QFrame { background-color: #f9f9f9; border: 1px solid #d0d0d0; border-radius: 4px; }")
-        acq_layout = QVBoxLayout(acq_card)
-
-        # 电压温度采集
-        vt_group = QGroupBox(self.ui_text.ACQ_VT_TITLE)
-        vt_layout = QVBoxLayout(vt_group)
-
+        # 卡2：电压温度采集
+        self.vt_card = theme.Card(self.ui_text.ACQ_VT_TITLE, help_text=self.ui_text.ACQ_VT_HELP)
         status_layout = QHBoxLayout()
         self.vt_status_prefix_label = QLabel(self.ui_text.ACQ_STATUS_PREFIX)
         self.vt_status_label = QLabel(self.ui_text.ACQ_STATUS_IDLE)
         status_layout.addWidget(self.vt_status_prefix_label)
         status_layout.addWidget(self.vt_status_label)
         status_layout.addStretch()
-        vt_layout.addLayout(status_layout)
+        self.vt_card.add_layout(status_layout)
 
         data_layout = QHBoxLayout()
         self.vt_samples_prefix_label = QLabel(self.ui_text.ACQ_SAMPLES)
@@ -336,48 +341,54 @@ class BatteryMonitorUI(QWidget):
         data_layout.addWidget(self.vt_time_prefix_label)
         data_layout.addWidget(self.vt_time_label)
         data_layout.addStretch()
-        vt_layout.addLayout(data_layout)
+        self.vt_card.add_layout(data_layout)
 
         btn_layout = QHBoxLayout()
         self.vt_start_btn = QPushButton(self.ui_text.ACQ_BTN_START)
+        self.vt_start_btn.setObjectName("PrimaryButton")
         self.vt_stop_btn = QPushButton(self.ui_text.ACQ_BTN_STOP)
         self.vt_stop_btn.setEnabled(False)
         btn_layout.addWidget(self.vt_start_btn)
         btn_layout.addWidget(self.vt_stop_btn)
         btn_layout.addStretch()
-        vt_layout.addLayout(btn_layout)
+        self.vt_card.add_layout(btn_layout)
+        lv.addWidget(self.vt_card)
 
-        acq_layout.addWidget(vt_group)
-
-        # EIS采集
-        eis_group = QGroupBox(self.ui_text.ACQ_EIS_TITLE)
-        eis_layout = QVBoxLayout(eis_group)
-
+        # 卡3：EIS 采集
+        self.eis_card = theme.Card(self.ui_text.ACQ_EIS_TITLE, help_text=self.ui_text.ACQ_EIS_HELP)
         status_layout_eis = QHBoxLayout()
         self.eis_status_prefix_label = QLabel(self.ui_text.ACQ_STATUS_PREFIX)
         self.eis_status_label = QLabel(self.ui_text.ACQ_STATUS_IDLE)
         status_layout_eis.addWidget(self.eis_status_prefix_label)
         status_layout_eis.addWidget(self.eis_status_label)
         status_layout_eis.addStretch()
-        eis_layout.addLayout(status_layout_eis)
+        self.eis_card.add_layout(status_layout_eis)
+
+        # 显示最近接收的 EIS 点（仅在结果接收中时更新）
+        self.eis_last_point_label = QLabel("Waiting for data...")
+        self.eis_last_point_label.setAlignment(Qt.AlignLeft)
+        self.eis_last_point_label.setStyleSheet("font-size: 9pt; color: #64748b;")
+        self.eis_card.add_widget(self.eis_last_point_label)
 
         btn_layout_eis = QHBoxLayout()
         self.eis_start_btn = QPushButton(self.ui_text.ACQ_BTN_START)
+        self.eis_start_btn.setObjectName("PrimaryButton")
         self.eis_stop_btn = QPushButton(self.ui_text.ACQ_BTN_STOP)
         self.eis_stop_btn.setEnabled(False)
         btn_layout_eis.addWidget(self.eis_start_btn)
         btn_layout_eis.addWidget(self.eis_stop_btn)
         btn_layout_eis.addStretch()
-        eis_layout.addLayout(btn_layout_eis)
+        self.eis_card.add_layout(btn_layout_eis)
+        lv.addWidget(self.eis_card)
 
-        acq_layout.addWidget(eis_group)
-
-        lv.addWidget(acq_card)
+        lv.addStretch(1)
+        main.addWidget(left, 1)
 
         # ========== RIGHT ==========
         self.right = QWidget()
-        self.right.setStyleSheet("background-color: #F3F3F3;")
         self.right_layout = QVBoxLayout(self.right)
+        self.right_layout.setSpacing(12)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
 
         # 电压图、温度图、阻抗图
         self.voltage_frame = self.create_time_plot(self.ui_text.VOLTAGE, "V")
@@ -387,8 +398,9 @@ class BatteryMonitorUI(QWidget):
         self.frames = [self.voltage_frame, self.temp_frame, self.impedance_frame]
         self.restore_layout()
 
-        main.addWidget(left)
-        main.addWidget(self.right)
+        main.addWidget(self.right, 3)
+
+        root.addLayout(main, 1)
 
         # 按钮信号连接
         self.vt_start_btn.clicked.connect(self.on_vt_start)
@@ -412,8 +424,14 @@ class BatteryMonitorUI(QWidget):
         """
         if self.data.eis_status != "waiting":
             return
-        self.data.add_eis_point(cell_num, freq, real, imag)
-        # 不更新图形，等待完成时统一更新
+
+        # 存储数据
+        added = self.data.add_eis_point(cell_num, freq, real, imag)
+
+        # 如果存储成功（有效电池编号），更新显示标签
+        if added:
+            # 格式化频率，保留1位小数
+            self.eis_last_point_label.setText(f"Cell {cell_num}, Freq {freq:.1f} Hz")
 
     def on_eis_finish(self):
         """收到 EISFinish=1 时调用，完成采集"""
@@ -444,16 +462,33 @@ class BatteryMonitorUI(QWidget):
             self.temp_frame.plot.curve.setData([], [])
 
     def update_impedance_plot(self, cell_index: int = None):
-        """更新奈奎斯特图（显示指定电池的 EIS 数据）"""
         if cell_index is None:
             cell_index = self.current_battery_index
         data = self.data.get_eis_data(cell_index)
         if data:
             reals = [p[1] for p in data]
             imags = [p[2] for p in data]
-            self.impedance_frame.plot.curve.setData(reals, imags)
+            freqs = [p[0] for p in data]
+
+            # 更新曲线
+            self.impedance_frame.curve.setData(reals, imags)
+
+            # 更新散点：移除旧散点，创建新散点
+            self.impedance_frame.plot.removeItem(self.impedance_frame.scatter)
+            new_scatter = EISScatterItem(
+                reals, imags, freqs,
+                fmt="Freq={freq:.2f} Hz\nRe={real:.2f}\nIm={imag:.2f}",
+                threshold=0.5
+            )
+            self.impedance_frame.plot.addItem(new_scatter)
+            self.impedance_frame.scatter = new_scatter
         else:
-            self.impedance_frame.plot.curve.setData([], [])
+            # 无数据时清空
+            self.impedance_frame.curve.setData([], [])
+            self.impedance_frame.plot.removeItem(self.impedance_frame.scatter)
+            new_scatter = EISScatterItem([], [], [])
+            self.impedance_frame.plot.addItem(new_scatter)
+            self.impedance_frame.scatter = new_scatter
 
     # ---------- 更新显示 ----------
     def update_display(self):
@@ -513,12 +548,18 @@ class BatteryMonitorUI(QWidget):
         self.data.clear_eis_data()
         self.data.eis_status = "waiting"
         self._update_acq_status()
-        self.impedance_frame.plot.curve.setData([], [])  # 清空图形
+        # 清空图形（通过 update_impedance_plot 实现曲线和散点的清除）
+        self.update_impedance_plot(self.current_battery_index)
+        # 重置标签
+        self.eis_last_point_label.setText("Waiting for data...")
+        # 由上位机向 BMS 发送 EIS 启动报文
+        self.eis_start_requested.emit()
 
     def on_eis_stop(self):
         """手动停止 EIS 采集：回到空闲状态，保留已接收数据（可查看）"""
         self.data.eis_status = "idle"
         self._update_acq_status()
+        self.eis_last_point_label.setText("")
 
     # ---------- 电池选择与信息更新 ----------
     def on_battery_changed(self, index):
@@ -565,12 +606,12 @@ class BatteryMonitorUI(QWidget):
         self.update_info_text()
 
         # 更新采集卡片文本
-        for child in self.findChildren(QGroupBox):
-            title = child.title()
-            if title in (UITextZH.ACQ_VT_TITLE, UITextEN.ACQ_VT_TITLE):
-                child.setTitle(self.ui_text.ACQ_VT_TITLE)
-            elif title in (UITextZH.ACQ_EIS_TITLE, UITextEN.ACQ_EIS_TITLE):
-                child.setTitle(self.ui_text.ACQ_EIS_TITLE)
+        self.cell_card.title_label.setText(self.ui_text.CELL_CARD_TITLE)
+        self.cell_card.help_label.setText(self.ui_text.CELL_HELP)
+        self.vt_card.title_label.setText(self.ui_text.ACQ_VT_TITLE)
+        self.vt_card.help_label.setText(self.ui_text.ACQ_VT_HELP)
+        self.eis_card.title_label.setText(self.ui_text.ACQ_EIS_TITLE)
+        self.eis_card.help_label.setText(self.ui_text.ACQ_EIS_HELP)
 
         self.vt_status_prefix_label.setText(self.ui_text.ACQ_STATUS_PREFIX)
         self.eis_status_prefix_label.setText(self.ui_text.ACQ_STATUS_PREFIX)
@@ -641,8 +682,12 @@ class BatteryMonitorUI(QWidget):
     def create_time_plot(self, title, ylab):
         """创建时间曲线图（电压/温度）"""
         frame = QFrame()
+        frame.setObjectName("Card")
         v = QVBoxLayout(frame)
+        v.setContentsMargins(12, 10, 12, 10)
+        v.setSpacing(6)
         plot = pg.PlotWidget(title=title)
+        theme.setup_plot(plot, min_height=100)
         plot.setLabel("left", ylab)
         plot.setLabel("bottom", self.ui_text.TIME)
         plot.showGrid(x=True, y=True, alpha=0.2)
@@ -652,6 +697,7 @@ class BatteryMonitorUI(QWidget):
 
         btns = QHBoxLayout()
         expand = QPushButton(self.ui_text.SHOW_BIG)
+        expand.setObjectName("GhostButton")
         expand.clicked.connect(lambda: self.expand(frame))
         frame.expand_btn = expand
         btns.addWidget(expand)
@@ -665,18 +711,25 @@ class BatteryMonitorUI(QWidget):
     def create_nyquist_plot(self):
         """奈奎斯特图（动态更新）"""
         frame = QFrame()
+        frame.setObjectName("Card")
         v = QVBoxLayout(frame)
+        v.setContentsMargins(12, 10, 12, 10)
+        v.setSpacing(6)
         plot = pg.PlotWidget(title=self.ui_text.IMPEDANCE)
+        theme.setup_plot(plot, min_height=100)
         plot.setLabel("left", "Im(Z)")
         plot.setLabel("bottom", "Re(Z)")
         plot.showGrid(x=True, y=True, alpha=0.2)
 
-        # 空曲线，带符号点
-        curve = plot.plot([], [], pen=pg.mkPen("#2ECC71", width=2), symbol='o', symbolSize=6, symbolBrush='b')
-        plot.curve = curve
+        # 曲线（连接线）
+        curve = plot.plot([], [], pen=pg.mkPen("#2ECC71", width=2))
+        # 散点（用于悬停，初始为空）
+        scatter = EISScatterItem([], [], [])
+        plot.addItem(scatter)
 
         btns = QHBoxLayout()
         expand = QPushButton(self.ui_text.SHOW_BIG)
+        expand.setObjectName("GhostButton")
         expand.clicked.connect(lambda: self.expand(frame))
         frame.expand_btn = expand
         btns.addWidget(expand)
@@ -684,5 +737,8 @@ class BatteryMonitorUI(QWidget):
         v.addWidget(plot, stretch=1)
         v.addLayout(btns)
 
+        # 保存引用
         frame.plot = plot
+        frame.curve = curve
+        frame.scatter = scatter
         return frame

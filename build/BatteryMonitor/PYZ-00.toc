@@ -2540,6 +2540,7 @@
   ('urllib.response',
    'C:\\Users\\30353\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\urllib\\response.py',
    'PYMODULE'),
+  ('vector_utils', 'E:\\BatteryMonitorGUI\\vector_utils.py', 'PYMODULE'),
   ('webbrowser',
    'C:\\Users\\30353\\AppData\\Local\\Programs\\Python\\Python312\\Lib\\webbrowser.py',
    'PYMODULE'),
