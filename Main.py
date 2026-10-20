@@ -63,7 +63,7 @@ class UITextEN:
     JUMP_TO_MONITOR = "Jump to monitor page, battery"
 
 class MainWindow(QWidget):
-    def __init__(self):
+    def __init__(self, connect_can=True):
         super().__init__()
         from PySide6.QtGui import QIcon
         self.setWindowIcon(QIcon(resource_path("appicon.ico")))
@@ -156,17 +156,18 @@ class MainWindow(QWidget):
             arb_bitrate = int(settings.value("arb_bitrate",1000000))
             data_bitrate = int(settings.value("data_bitrate",1000000))
             self.dbc_path = resource_path("System3.dbc")
-            self.can_receiver = CANReceiver(
-                app_name=app_name,
-                channel=channel,
-                arb_bitrate=arb_bitrate,
-                data_bitrate=data_bitrate,
-                dbc_path=self.dbc_path,
-                interface=self.can_interface
-            )
-            self.can_receiver.data_updated.connect(self.on_can_data_updated)
-            self.can_receiver.message_received.connect(self.on_can_message_received)
-            self.can_receiver.raw_message.connect(self.bootloader_page.on_raw_message)
+            if connect_can:
+                self.can_receiver = CANReceiver(
+                    app_name=app_name,
+                    channel=channel,
+                    arb_bitrate=arb_bitrate,
+                    data_bitrate=data_bitrate,
+                    dbc_path=self.dbc_path,
+                    interface=self.can_interface
+                )
+                self.can_receiver.data_updated.connect(self.on_can_data_updated)
+                self.can_receiver.message_received.connect(self.on_can_message_received)
+                self.can_receiver.raw_message.connect(self.bootloader_page.on_raw_message)
             self.overall_page.update_display()
         except Exception as e:
             print(f"{self.current_text.CAN_INIT_FAILED}: {e}")
@@ -544,10 +545,45 @@ class MainWindow(QWidget):
 
 # Main
 if __name__ == "__main__":
+    smoke_test = '--startup-smoke-test' in sys.argv
+    if smoke_test:
+        os.environ['QT_QPA_PLATFORM'] = 'offscreen'
     app = QApplication(sys.argv)
     app.setStyleSheet(theme.APP_STYLESHEET)
-    w = MainWindow()
+    w = MainWindow(connect_can=not smoke_test)
     w.show()
     # show 后再强制一次初始尺寸，确保布局稳定后仍为 1280x800
     QTimer.singleShot(0, lambda: w.resize(1280, 800))
+    if smoke_test:
+        # 启动已打包 EXE、创建全部页面并跑事件循环，不连接 CAN 硬件。
+        def write_smoke_result():
+            import ctypes
+            import json
+            from pathlib import Path
+            from PySide6.QtCore import qVersion
+
+            modules = {}
+            if os.name == 'nt':
+                kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+                kernel.GetModuleHandleW.argtypes = [ctypes.c_wchar_p]
+                kernel.GetModuleHandleW.restype = ctypes.c_void_p
+                kernel.GetModuleFileNameW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p,
+                                                       ctypes.c_uint]
+                kernel.GetModuleFileNameW.restype = ctypes.c_uint
+                for name in ('Qt6Core.dll', 'icuuc.dll', 'VCRUNTIME140.dll'):
+                    handle = kernel.GetModuleHandleW(name)
+                    if handle:
+                        buffer = ctypes.create_unicode_buffer(32768)
+                        kernel.GetModuleFileNameW(handle, buffer, len(buffer))
+                        modules[name] = buffer.value
+            target = Path(sys.argv[sys.argv.index('--startup-smoke-test') + 1])
+            target.write_text(json.dumps({
+                'status': 'ok', 'frozen': bool(getattr(sys, 'frozen', False)),
+                'qt_version': qVersion(), 'tabs': w.tabs.count(),
+                'can_connected': w.can_receiver is not None,
+                'loaded_modules': modules,
+            }, ensure_ascii=False, indent=2), encoding='utf-8')
+            app.quit()
+
+        QTimer.singleShot(300, write_smoke_result)
     sys.exit(app.exec())
