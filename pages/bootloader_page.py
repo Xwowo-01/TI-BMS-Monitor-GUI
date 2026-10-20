@@ -80,6 +80,9 @@ class BootloaderPage(QWidget):
     def __init__(self):
         super().__init__()
         self.bin_file = ""
+        # QWidget.thread() 是 Qt 自带方法，刷写线程必须使用独立属性。
+        self._flash_thread = None
+        self.flasher = None
         # ⭐ 核心：真实阶段状态（不会被语言切换覆盖）
         self.current_stage_text = self.current_ui.STAGE_IDLE
         # 报文监听状态
@@ -222,37 +225,46 @@ class BootloaderPage(QWidget):
 
     # 开始刷写
     def start_flash(self):
-        if hasattr(self, "thread") and self.thread.isRunning():
+        if self._flash_thread is not None:
             return
         if not self.bin_file:
             self.log_text.append(self.current_ui.PLEASE_SELECT_BIN)
             return
         for control in (self.start_btn, self.file_btn, self.fd_checkbox, self.log_checkbox):
             control.setEnabled(False)
-        self.starting_flash.emit()
         self.progress.setValue(0)
         self.log_text.clear()
         # ⭐ 可选：进入刷写状态（真实状态）
         self.current_stage_text = "Flashing"
-        self.thread = QThread()
-        self.flasher = UDSFlasher(
-            self.bin_file,
-            self.log_checkbox.isChecked(),
-            self.fd_checkbox.isChecked()
-        )
-        self.flasher.moveToThread(self.thread)
-        self.thread.started.connect(self.flasher.flash)
-        self.flasher.log_signal.connect(self.append_log)
-        self.flasher.progress_signal.connect(self.progress.setValue)
-        self.flasher.stage_signal.connect(self.update_stage)
-        self.flasher.finished_signal.connect(self._flash_finished)
-        self.thread.start()
+        try:
+            self._flash_thread = QThread(self)
+            self.flasher = UDSFlasher(
+                self.bin_file,
+                self.log_checkbox.isChecked(),
+                self.fd_checkbox.isChecked()
+            )
+            self.flasher.moveToThread(self._flash_thread)
+            self._flash_thread.started.connect(self.flasher.flash)
+            self._flash_thread.finished.connect(self.flasher.deleteLater)
+            self.flasher.log_signal.connect(self.append_log)
+            self.flasher.progress_signal.connect(self.progress.setValue)
+            self.flasher.stage_signal.connect(self.update_stage)
+            self.flasher.finished_signal.connect(self._flash_finished)
+            self.starting_flash.emit()
+            self._flash_thread.start()
+        except Exception as exc:
+            self.append_log(f"启动刷写失败: {exc}")
+            self._flash_finished(False)
 
     # 刷写完成
     def _flash_finished(self, success):
-        if hasattr(self, "thread") and self.thread.isRunning():
-            self.thread.quit()
-            self.thread.wait()
+        thread = self._flash_thread
+        if thread is not None:
+            thread.quit()
+            thread.wait()
+            self._flash_thread = None
+            self.flasher = None
+            thread.deleteLater()
         for control in (self.start_btn, self.file_btn, self.fd_checkbox, self.log_checkbox):
             control.setEnabled(True)
         self.current_stage_text = (

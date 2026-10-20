@@ -555,6 +555,7 @@ if __name__ == "__main__":
     # show 后再强制一次初始尺寸，确保布局稳定后仍为 1280x800
     QTimer.singleShot(0, lambda: w.resize(1280, 800))
     if smoke_test:
+        smoke_checks = {}
         # 启动已打包 EXE、创建全部页面并跑事件循环，不连接 CAN 硬件。
         def write_smoke_result():
             import ctypes
@@ -578,12 +579,52 @@ if __name__ == "__main__":
                         modules[name] = buffer.value
             target = Path(sys.argv[sys.argv.index('--startup-smoke-test') + 1])
             target.write_text(json.dumps({
-                'status': 'ok', 'frozen': bool(getattr(sys, 'frozen', False)),
+                'status': 'ok' if all(smoke_checks.values()) else 'failed',
+                'frozen': bool(getattr(sys, 'frozen', False)),
                 'qt_version': qVersion(), 'tabs': w.tabs.count(),
                 'can_connected': w.can_receiver is not None,
                 'loaded_modules': modules,
+                'bootloader_button_checks': smoke_checks,
             }, ensure_ascii=False, indent=2), encoding='utf-8')
             app.quit()
 
-        QTimer.singleShot(300, write_smoke_result)
+        def check_bootloader_buttons():
+            import tempfile
+            from pathlib import Path
+
+            page = w.bootloader_page
+            page.start_btn.click()
+            smoke_checks['no_file_click'] = (
+                page.current_ui.PLEASE_SELECT_BIN in page.log_text.toPlainText()
+                and callable(page.thread) and page._flash_thread is None)
+            original_bus = can.interface.Bus
+            bus_calls = []
+
+            def reject_hardware(**kwargs):
+                bus_calls.append(kwargs)
+                raise RuntimeError('STARTUP_SMOKE_NO_HARDWARE')
+
+            report_path = Path(sys.argv[sys.argv.index('--startup-smoke-test') + 1])
+            with tempfile.NamedTemporaryFile(dir=report_path.parent, suffix='.bin',
+                                             delete=False) as firmware:
+                firmware.write(bytes(range(16)))
+                firmware_path = Path(firmware.name)
+
+            def after_failed_flash(success):
+                can.interface.Bus = original_bus
+                firmware_path.unlink()
+                smoke_checks['failed_flash_recovers'] = (
+                    not success and bool(bus_calls) and page._flash_thread is None
+                    and page.start_btn.isEnabled() and page.file_btn.isEnabled()
+                    and callable(page.thread)
+                    and 'STARTUP_SMOKE_NO_HARDWARE' in page.log_text.toPlainText())
+                write_smoke_result()
+
+            page.finished_flash.connect(after_failed_flash)
+            page.bin_file = str(firmware_path)
+            # 失败总线工厂在 QThread 启动前替换，整个自检不会接触 CAN 硬件。
+            can.interface.Bus = reject_hardware
+            page.start_btn.click()
+
+        QTimer.singleShot(300, check_bootloader_buttons)
     sys.exit(app.exec())

@@ -44,6 +44,9 @@ def verify_release(directory, report_path):
     if (report['status'], report['frozen'], report['tabs'], report['can_connected']) != (
             'ok', True, 4, False):
         raise RuntimeError(f'启动测试未通过: {report}')
+    if report.get('bootloader_button_checks') != {
+            'no_file_click': True, 'failed_flash_recovers': True}:
+        raise RuntimeError(f'刷写按钮路径验证未通过: {report}')
     core = Path(report['loaded_modules']['Qt6Core.dll']).resolve()
     if not core.is_relative_to(internal):
         raise RuntimeError(f'Qt6Core 错误地从发布包以外加载: {core}')
