@@ -157,6 +157,7 @@ class BootloaderPage(QWidget):
         self.log_card.add_header_widget(self.monitor_btn)
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
+        self.log_text.document().setMaximumBlockCount(3000)
         self.log_card.add_widget(self.log_text, 1)
         main.addWidget(self.log_card, 2)
 
@@ -221,9 +222,13 @@ class BootloaderPage(QWidget):
 
     # 开始刷写
     def start_flash(self):
+        if hasattr(self, "thread") and self.thread.isRunning():
+            return
         if not self.bin_file:
             self.log_text.append(self.current_ui.PLEASE_SELECT_BIN)
             return
+        for control in (self.start_btn, self.file_btn, self.fd_checkbox, self.log_checkbox):
+            control.setEnabled(False)
         self.starting_flash.emit()
         self.progress.setValue(0)
         self.log_text.clear()
@@ -248,6 +253,8 @@ class BootloaderPage(QWidget):
         if hasattr(self, "thread") and self.thread.isRunning():
             self.thread.quit()
             self.thread.wait()
+        for control in (self.start_btn, self.file_btn, self.fd_checkbox, self.log_checkbox):
+            control.setEnabled(True)
         self.current_stage_text = (
             "Success" if success else "Failed"
         )
