@@ -622,6 +622,7 @@ if __name__ == "__main__":
 
             page.finished_flash.connect(after_failed_flash)
             page.bin_file = str(firmware_path)
+            page.log_checkbox.setChecked(False)
             # 失败总线工厂在 QThread 启动前替换，整个自检不会接触 CAN 硬件。
             can.interface.Bus = reject_hardware
             page.start_btn.click()

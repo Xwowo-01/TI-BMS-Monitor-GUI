@@ -3,6 +3,10 @@
 No hardware, real driver functions, or application mappings are opened/changed.
 """
 import ctypes
+from pathlib import Path
+import queue
+import tempfile
+import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock, patch
@@ -10,6 +14,8 @@ from unittest.mock import Mock, patch
 import can
 from can.interfaces.vector import VectorBus
 from can.interfaces.vector import xlclass, xldefine
+from can.interfaces.vector.exceptions import VectorOperationError
+from PySide6.QtCore import Qt
 from uds.uds_flasher import UDSFlasher
 from uds.vector_transport import VectorTransport
 
@@ -25,6 +31,8 @@ class VectorBoundaryTests(unittest.TestCase):
         self.bus = object.__new__(VectorBus)
         self.bus._is_shutdown = True
         self.bus._can_protocol = can.CanProtocol.CAN_20
+        self.bus._filters = None
+        self.bus._time_offset = 0
         self.bus.mask = 1 << 7
         self.bus.channel_masks = {0: 1 << 7}
         self.bus.index_to_channel = {7: 0}
@@ -230,6 +238,151 @@ class VectorBoundaryTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, 'pcan'):
                 self.flasher.create_bus()
         factory.assert_not_called()
+
+    def test_vn1610_binds_serial_and_physical_can1_ignoring_monitor_settings(self):
+        cfg = self.config(hw_type=55)
+        cfg.serial_number = 26774
+        cfg.hw_channel = 0
+        with patch('uds.uds_flasher.QSettings', side_effect=AssertionError('Must not read monitor settings')):
+            flasher = UDSFlasher('unused.bin', fd=True, vn1610_serial=26774)
+            with patch('can.interface.Bus', return_value=self.bus) as factory, \
+                    patch('uds.vector_transport.get_channel_configs', return_value=[cfg]), \
+                    patch.object(flasher, '_start_rx'):
+                flasher.create_bus()
+        kwargs = factory.call_args.kwargs
+        self.assertEqual((kwargs['serial'], kwargs['app_name'], kwargs['channel'],
+                          kwargs['bitrate'], kwargs['fd']), (26774, None, 0, 1000000, False))
+        self.assertTrue(kwargs['ignore_config'])
+        self.assertNotIn('data_bitrate', kwargs)
+
+    def test_vn1610_profile_rejects_other_card_port_or_bitrate(self):
+        for field, wrong in (('serial_number', 540982), ('hw_type', 57),
+                             ('hw_channel', 1), ('bitrate', 500000)):
+            cfg = self.config(hw_type=55)
+            cfg.serial_number, cfg.hw_channel = 26774, 0
+            if field == 'bitrate':
+                cfg.bus_params.can.bitrate = wrong
+            else:
+                setattr(cfg, field, wrong)
+            with self.subTest(field=field), \
+                    patch('uds.vector_transport.get_channel_configs', return_value=[cfg]):
+                with self.assertRaises(can.CanInitializationError):
+                    self.transport.describe(expected_serial=26774)
+        self.assertEqual(self.calls, [])
+
+    def test_vn1610_profile_requires_initialization_permission(self):
+        cfg = self.config(hw_type=55)
+        cfg.serial_number, cfg.hw_channel = 26774, 0
+        self.bus.permission_mask = 0
+        with patch('uds.vector_transport.get_channel_configs', return_value=[cfg]):
+            with self.assertRaisesRegex(can.CanInitializationError, '共享'):
+                self.transport.describe(expected_serial=26774)
+
+    def test_disconnected_vn1610_never_falls_back_to_application_or_other_card(self):
+        flasher = UDSFlasher('unused.bin', vn1610_serial=26774)
+        with patch('can.interface.Bus', side_effect=can.CanInitializationError('not found')) as factory:
+            with self.assertRaises(can.CanInitializationError):
+                flasher.create_bus()
+        factory.assert_called_once()
+        self.assertEqual(factory.call_args.kwargs['serial'], 26774)
+        self.assertIsNone(flasher.bus)
+
+    def test_state_events_before_response_are_drained_without_waiting(self):
+        state = xlclass.XLevent()
+        state.tag = xldefine.XL_EventTags.XL_CHIP_STATE
+        state.tagData.chipState.busStatus = xldefine.XL_BusStatus.XL_CHIPSTAT_ERROR_ACTIVE
+        response = xlclass.XLevent()
+        response.tag = xldefine.XL_EventTags.XL_RECEIVE_MSG
+        response.tagData.msg.id = 0x4D0
+        response.tagData.msg.dlc = 8
+        response.tagData.msg.data = tuple(bytes.fromhex('06 50 03 00 32 00 C8 FF'))
+        events = iter([state] * 32 + [response])
+
+        def receive(port, count, output):
+            event = next(events)
+            ctypes.memmove(ctypes.addressof(output), ctypes.addressof(event), ctypes.sizeof(event))
+
+        self.bus.xldriver.xlReceive = receive
+        with patch.object(self.transport, '_wait_for_rx', side_effect=AssertionError('queued event must not wait')):
+            result = self.transport.recv(0.5)
+        self.assertEqual(result.arbitration_id, 0x4D0)
+        self.assertEqual(bytes(result.data), bytes.fromhex('06 50 03 00 32 00 C8 FF'))
+
+    def test_empty_receive_queue_waits_then_receives_fd_tx_receipt(self):
+        self.bus._can_protocol = can.CanProtocol.CAN_FD
+        receipt = can.Message(arbitration_id=0x4E0, is_extended_id=False, is_rx=False)
+        empty = VectorOperationError(10, 'XL_ERR_QUEUE_IS_EMPTY', 'xlCanReceive')
+        with patch.object(self.bus, '_recv_canfd', side_effect=[empty, receipt]), \
+                patch.object(self.transport, '_wait_for_rx') as wait:
+            self.assertIs(self.transport.recv(), receipt)
+        wait.assert_called_once()
+
+    def test_receive_timeout_and_driver_errors_remain_distinct(self):
+        empty = VectorOperationError(10, 'XL_ERR_QUEUE_IS_EMPTY', 'xlReceive')
+        with patch.object(self.bus, '_recv_can', side_effect=empty), \
+                patch.object(self.transport, '_wait_for_rx') as wait:
+            self.assertIsNone(self.transport.recv(0))
+        wait.assert_not_called()
+        failure = VectorOperationError(129, 'XL_ERR_HW_NOT_PRESENT', 'xlReceive')
+        with patch.object(self.bus, '_recv_can', side_effect=failure):
+            with self.assertRaises(VectorOperationError):
+                self.transport.recv()
+
+    def test_full_flash_uses_native_xl_packing_and_receive_with_state_event_backlog(self):
+        from test_bootloader_protocol import SimulatedECU
+        with tempfile.TemporaryDirectory() as directory:
+            firmware = bytes(range(256)) * 32
+            path = Path(directory) / 'firmware.bin'
+            path.write_bytes(firmware)
+            flasher = UDSFlasher(str(path), vn1610_serial=26774)
+            ecu = SimulatedECU(flasher, threaded=True, bs=8, multi_response=True)
+            cfg = self.config(hw_type=55)
+            cfg.serial_number, cfg.hw_channel = 26774, 0
+            pending = []
+
+            def transmit(port, mask, count, events):
+                self.transmit(port, mask, count, events)
+                data = list(events[0].tagData.msg.data)
+                ecu.rx_queue.put(can.Message(arbitration_id=0x4E0, is_extended_id=False,
+                                             is_rx=False, timestamp=time.time(), data=data))
+                ecu.send(can.Message(arbitration_id=0x4E0, is_extended_id=False, data=data))
+
+            def receive(port, count, output):
+                if not pending:
+                    try:
+                        pending.append(ecu.rx_queue.get_nowait())
+                    except queue.Empty:
+                        raise VectorOperationError(10, 'XL_ERR_QUEUE_IS_EMPTY', 'xlReceive') from None
+                    output.tag = xldefine.XL_EventTags.XL_CHIP_STATE
+                    output.tagData.chipState.busStatus = xldefine.XL_BusStatus.XL_CHIPSTAT_ERROR_ACTIVE
+                    return
+                message = pending.pop()
+                output.tag = xldefine.XL_EventTags.XL_RECEIVE_MSG
+                output.timeStamp = int(message.timestamp * 1e9)
+                output.tagData.msg.id = message.arbitration_id
+                output.tagData.msg.dlc = message.dlc
+                output.tagData.msg.flags = (0 if message.is_rx else
+                                           xldefine.XL_MessageFlags.XL_CAN_MSG_FLAG_TX_COMPLETED)
+                output.tagData.msg.data = tuple(message.data)
+
+            self.bus.xldriver.xlCanTransmit = transmit
+            self.bus.xldriver.xlReceive = receive
+            self.bus.shutdown = Mock()
+            self.bus.event_handle = ctypes.c_void_p(0)
+            results = []
+            flasher.finished_signal.connect(results.append, Qt.DirectConnection)
+            with patch('can.interface.Bus', return_value=self.bus), \
+                    patch('uds.vector_transport.get_channel_configs', return_value=[cfg]), \
+                    patch.object(VectorTransport, '_wait_for_rx', side_effect=lambda s: time.sleep(0.001)), \
+                    patch('uds.uds_flasher.CF_DELAY_S', 0):
+                flasher.flash()
+            self.assertEqual(results, [True])
+            self.assertEqual(ecu.written, firmware)
+            self.assertEqual(flasher.stats['tx'], len(self.calls))
+            self.assertEqual(flasher.stats['tx_failed'], 0)
+            self.assertEqual(flasher.stats['driver_errors'], 0)
+            self.assertGreater(flasher.stats['tx_completed'], 1000)
+            self.bus.shutdown.assert_called_once()
 
 
 if __name__ == '__main__':

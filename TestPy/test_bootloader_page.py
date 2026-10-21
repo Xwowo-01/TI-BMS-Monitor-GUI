@@ -61,7 +61,9 @@ class BootloaderPageTests(unittest.TestCase):
         self.assertIsNone(self.page._flash_thread)
         self.assertTrue(self.page.start_btn.isEnabled())
         self.assertTrue(self.page.file_btn.isEnabled())
-        self.assertTrue(self.page.fd_checkbox.isEnabled())
+        self.assertEqual(self.page.fd_checkbox.isEnabled(),
+                         not self.page.vn1610_checkbox.isChecked())
+        self.assertTrue(self.page.vn1610_checkbox.isEnabled())
         self.assertTrue(self.page.log_checkbox.isEnabled())
         self.assertTrue(callable(self.page.thread))
         self.assertEqual(self.page.thread(), QThread.currentThread())
@@ -78,7 +80,7 @@ class BootloaderPageTests(unittest.TestCase):
         with patch.object(module, 'UDSFlasher', return_value=worker) as factory:
             self.page.start_btn.click()
             self.wait_for(lambda: len(self.results) == 1)
-        factory.assert_called_once_with(str(self.bin_file), False, False)
+        factory.assert_called_once_with(str(self.bin_file), True, False, vn1610_serial=26774)
         self.assertEqual(self.results, [True])
         self.assert_idle()
 
@@ -122,11 +124,33 @@ class BootloaderPageTests(unittest.TestCase):
 
     def test_real_flasher_hardware_error_returns_to_idle(self):
         self.page.bin_file = str(self.bin_file)
+        self.page.log_checkbox.setChecked(False)
         with patch('can.interface.Bus', side_effect=RuntimeError('simulated missing hardware')):
             self.page.start_btn.click()
             self.wait_for(lambda: len(self.results) == 1)
         self.assertEqual(self.results, [False])
         self.assertIn('simulated missing hardware', self.page.log_text.toPlainText())
+        self.assert_idle()
+
+    def test_vn1610_profile_cannot_accidentally_enable_fd(self):
+        self.assertTrue(self.page.log_checkbox.isChecked())
+        self.assertTrue(self.page.vn1610_checkbox.isChecked())
+        self.assertFalse(self.page.fd_checkbox.isEnabled())
+        self.page.vn1610_checkbox.setChecked(False)
+        self.page.fd_checkbox.setChecked(True)
+        self.page.vn1610_checkbox.setChecked(True)
+        self.assertFalse(self.page.fd_checkbox.isChecked())
+        self.assertFalse(self.page.fd_checkbox.isEnabled())
+
+    def test_unchecked_profile_preserves_settings_mode(self):
+        worker = FakeFlasher(result=False)
+        self.page.bin_file = str(self.bin_file)
+        self.page.vn1610_checkbox.setChecked(False)
+        self.page.fd_checkbox.setChecked(True)
+        with patch.object(module, 'UDSFlasher', return_value=worker) as factory:
+            self.page.start_btn.click()
+            self.wait_for(lambda: len(self.results) == 1)
+        factory.assert_called_once_with(str(self.bin_file), True, True, vn1610_serial=None)
         self.assert_idle()
 
 
