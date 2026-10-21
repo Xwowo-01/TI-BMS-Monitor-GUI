@@ -89,6 +89,7 @@ class UDSFlasher(QObject):
         self.block_size = self.TRANSFER_SIZE   # TransferData 每块字节数（按 ECU 应答调整）
         self.log_file = None
         self.bus = None
+        self._transport = None
 
         # ---- 流式接收架构：后台线程持续收帧，组包后放进收件箱 ----
         self._lock = threading.Lock()
@@ -118,7 +119,7 @@ class UDSFlasher(QObject):
         self._started_at = time.perf_counter()
         self._last_tx_at = None
         self._last_cf_at = None
-        self.stats = dict(tx=0, rx=0, error_frames=0, driver_errors=0,
+        self.stats = dict(tx=0, tx_failed=0, tx_completed=0, rx=0, error_frames=0, driver_errors=0,
                           max_rx_lag_ms=0.0, max_cf_gap_ms=0.0)
 
         # 读取用户保存的 CAN 配置
@@ -201,6 +202,8 @@ class UDSFlasher(QObject):
             self.log_file = None
 
     def _check_rx(self):
+        if self._transport is not None:
+            self._transport.check_state()
         if self._rx_error is not None:
             raise RuntimeError(f"CAN 接收已中止: {self._rx_error}")
 
@@ -237,17 +240,33 @@ class UDSFlasher(QObject):
 
     # CAN
     def create_bus(self):
+        from uds.vector_transport import VectorTransport
+
+        settings = QSettings('BatteryMonitor', 'CANConfig')
+        interface = settings.value('can_interface', 'vector')
+        if interface != 'vector':
+            raise ValueError(f'Bootloader 当前发送实现使用 Vector，但设置选择了 {interface}；'
+                             '请先选择并配置 Vector，停止向其他接口误发')
         kwargs = dict(
             interface='vector',
             channel=self.channel,
             bitrate=self.bitrate,
             app_name=self.vector_app_name,
             fd=self.fd,
-            can_filters=[{'can_id': self.RX_ID, 'can_mask': 0x7FF, 'extended': False}],
+            listen_only=False,
+            receive_own_messages=True,
+            ignore_config=True,
+            # Vector supports one standard hardware filter. A shared mask keeps
+            # RX and TX receipts without accepting all traffic into the queue.
+            can_filters=[{'can_id': self.RX_ID & self.TX_ID,
+                          'can_mask': 0x7FF ^ (self.RX_ID ^ self.TX_ID),
+                          'extended': False}],
         )
         if self.fd:
             kwargs['data_bitrate'] = self.data_bitrate
         self.bus = can.interface.Bus(**kwargs)
+        self._transport = VectorTransport(self.bus, self.log)
+        self._transport.describe()
         self.log(
             f"CAN 初始化成功 "
             f"(App={self.vector_app_name}, "
@@ -257,21 +276,27 @@ class UDSFlasher(QObject):
         )
         # 启动后台接收线程：全程持续收帧，不依赖请求节奏
         self._start_rx()
+        self._transport.request_state()
 
     def send_can(self, data, note="", show=True):
         msg = can.Message(
             arbitration_id=self.TX_ID,
             data=data,
             is_extended_id=False,
-            is_fd=self.fd
+            is_fd=self.fd,
+            check=True,
         )
         with self._send_lock:
             started = time.perf_counter()
             gap_ms = ((started - self._last_tx_at) * 1000
                       if self._last_tx_at is not None else 0.0)
             try:
-                self.bus.send(msg)
+                if self._transport is not None:
+                    self._transport.send(msg)
+                else:
+                    self.bus.send(msg)
             except Exception as exc:
+                self.stats['tx_failed'] += 1
                 self.log(f"TX_FAILED 0x{self.TX_ID:X} {self._hex(data)}: {exc}")
                 raise
             elapsed_ms = (time.perf_counter() - started) * 1000
@@ -377,6 +402,13 @@ class UDSFlasher(QObject):
         if msg.is_error_frame:
             self.stats['error_frames'] += 1
             self.log("CAN_ERROR_FRAME：检测到总线错误帧，详见 RX_RAW")
+            return
+        if not msg.is_rx:
+            if (msg.arbitration_id == self.TX_ID and not msg.is_extended_id
+                    and not msg.is_remote_frame):
+                self.stats['tx_completed'] += 1
+                self.log(f'TX_COMPLETED 0x{self.TX_ID:X} : {self._hex(data)} '
+                         f'[hw_ts={hardware_ts:.6f} channel={msg.channel}]', show=False)
             return
         if msg.is_remote_frame or msg.is_extended_id:
             return
@@ -714,6 +746,8 @@ class UDSFlasher(QObject):
 
     # ISO TP
     def send_single_frame(self, payload):
+        if not 1 <= len(payload) <= 7:
+            raise ValueError(f'ISO-TP 单帧长度超出范围: {len(payload)}')
         frame = [len(payload)] + list(payload)
         while len(frame) < 8:
             frame.append(PAD_BYTE)
@@ -857,9 +891,10 @@ class UDSFlasher(QObject):
                                                     name="UDS-LOG", daemon=True)
                 self._log_thread.start()
                 self.log(f"完整日志文件：{os.path.abspath(filename)}")
-            self.log(f"BOOTLOADER_REV=2026-10-20-isotp-v2 Python={platform.python_version()} "
+            self.log(f"BOOTLOADER_REV=2026-10-21-vector-tx-v4 Python={platform.python_version()} "
                      f"python-can={can.__version__} OS={platform.platform()}")
-            self.log("日志说明：TX_QUEUED 只表示驱动发送调用成功，不保证已获总线 ACK；"
+            self.log("日志说明：TX_QUEUED 表示 Vector 驱动已接受 1 帧；TX_COMPLETED 为驱动报告的发送完成回执，"
+                     "均不代表 ECU 已执行 UDS 请求；"
                      "RX_RAW hw_ts 来自驱动，lag 为主机处理延迟估计；文件保存全部 CF。")
             with open(self.bin_file, "rb") as f:
                 firmware = f.read()
@@ -1054,7 +1089,8 @@ class UDSFlasher(QObject):
                 self.bus = None
             self.log(f"FLASH_RESULT：success={success} elapsed="
                      f"{time.perf_counter() - self._started_at:.3f}s stats={self.stats} "
-                     f"log_backlog={self._log_queue.qsize()}")
+                     f"log_backlog={self._log_queue.qsize()} "
+                     f"chip_state={self._transport.last_state if self._transport is not None else 'unavailable'}")
             self._close_log()
             # 总线及接收线程释放后再通知 UI，避免重新初始化 CAN 时竞争。
             self.finished_signal.emit(success)
