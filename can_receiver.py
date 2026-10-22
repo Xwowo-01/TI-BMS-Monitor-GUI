@@ -7,6 +7,7 @@ import cantools
 import can
 
 import vector_utils
+from can_config import PCAN, VECTOR_VN1610, interface_name, normalize_interface, vector_hw_type
 
 from PySide6.QtCore import QObject, Signal
 
@@ -46,7 +47,7 @@ class CANReceiver(QObject):
         self.arb_bitrate = arb_bitrate
         self.data_bitrate = data_bitrate
         self.dbc_path = dbc_path
-        self.interface = interface   # 'vector' 或 'pcan'
+        self.interface = normalize_interface(interface)
         self.bus = None
         self.notifier = None
         self.db = None
@@ -74,13 +75,14 @@ class CANReceiver(QObject):
     # 初始化总线
     def _init_bus(self):
         try:
-            if self.interface == 'vector':
+            if self.interface != PCAN:
                 # 自动确保 Vector 应用存在（不存在则按检测到的硬件自动创建）；
                 # 失败不阻断，仍按原逻辑用 app_name 打开总线。
                 try:
                     vector_utils.ensure_vector_application(
                         self.app_name,
-                        self.channel
+                        self.channel,
+                        hw_type=vector_hw_type(self.interface)
                     )
                 except Exception as e:
                     print(f"Vector 应用自动创建跳过: {e}")
@@ -91,8 +93,9 @@ class CANReceiver(QObject):
                     bitrate=self.arb_bitrate,
                     data_bitrate=self.data_bitrate,
                     app_name=self.app_name,
-                    fd=True
+                    fd=self.interface != VECTOR_VN1610
                 )
+                vector_utils.check_vector_hardware(self.bus, vector_hw_type(self.interface))
                 chan_desc = f"CH{self.channel + 1}"
             else:
                 # PCAN：通道名 PCAN_USBBUS1 / PCAN_USBBUS2 ...，CAN-FD
@@ -115,7 +118,7 @@ class CANReceiver(QObject):
 
             print(
                 f"接收通道 "
-                f"({chan_desc}) "
+                f"({interface_name(self.interface)} {chan_desc}) "
                 f"初始化成功。"
             )
             self.notifier = can.Notifier(
@@ -123,6 +126,9 @@ class CANReceiver(QObject):
                 [self._on_message_received]
             )
         except Exception as e:
+            if self.bus is not None:
+                self.bus.shutdown()
+                self.bus = None
             msg = f"CAN 总线错误: {e}"
             print(msg)
             self.error_occurred.emit(msg)

@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from language_manager import language_manager
+from can_config import INTERFACES, PCAN, VECTOR_VN1610, normalize_interface
 import theme
 
 
@@ -60,7 +61,6 @@ class UITextZH:
     SWITCH_ZH = "中文"
     SWITCH_EN = "English"
     INTERFACE = "CAN 接口"
-    INTERFACE_VECTOR = "Vector"
     INTERFACE_PCAN = "PCAN"
     APP_NAME = "应用名"
     CHANNEL = "通道"
@@ -72,11 +72,11 @@ class UITextZH:
     SECTION_LOG = "实时日志"
     CAN_HELP = "CAN 接口、通道与波特率参数，需与总线及硬件配置一致"
     LOG_HELP = "程序运行日志（stdout / stderr 实时捕获）"
-    INTERFACE_HINT = "选择使用的 CAN 卡：Vector 或 PCAN"
-    APP_NAME_HINT = "Vector Hardware Config 中创建的应用名（仅 Vector）"
+    INTERFACE_HINT = "选择实际使用的 CAN 卡型号：Vector VN1630A、Vector VN1610 或 PCAN"
+    APP_NAME_HINT = "在 Vector Hardware Manager（VHM）中注册的应用名，需完全一致"
     CHANNEL_HINT = "通道序号（0 对应 CH1 / PCAN_USBBUS1）"
     ARB_HINT = "仲裁域波特率（bps）"
-    DATA_HINT = "数据域波特率（bps，CAN FD，仅 Vector）"
+    DATA_HINT = "数据域波特率（bps，CAN FD）；VN1610 使用传统 CAN，无需此项"
 
 
 # English 文本
@@ -86,7 +86,6 @@ class UITextEN:
     SWITCH_ZH = "中文"
     SWITCH_EN = "English"
     INTERFACE = "CAN Interface"
-    INTERFACE_VECTOR = "Vector"
     INTERFACE_PCAN = "PCAN"
     APP_NAME = "App Name"
     CHANNEL = "Channel"
@@ -98,11 +97,11 @@ class UITextEN:
     SECTION_LOG = "Live Log"
     CAN_HELP = "CAN interface, channel and bitrate parameters, must match the bus and hardware config"
     LOG_HELP = "Live application log (stdout / stderr capture)"
-    INTERFACE_HINT = "Select the CAN card: Vector or PCAN"
-    APP_NAME_HINT = "Application name created in Vector Hardware Config (Vector only)"
+    INTERFACE_HINT = "Select the actual CAN card: Vector VN1630A, Vector VN1610 or PCAN"
+    APP_NAME_HINT = "Exact application name registered in Vector Hardware Manager (VHM)"
     CHANNEL_HINT = "Channel index (0 = CH1 / PCAN_USBBUS1)"
     ARB_HINT = "Arbitration bitrate (bps)"
-    DATA_HINT = "Data bitrate (bps, CAN FD, Vector only)"
+    DATA_HINT = "Data bitrate (bps, CAN FD); unused for VN1610 Classic CAN"
 
 class SettingUI(QWidget):
     # interface, app_name, channel, arb_bitrate, data_bitrate
@@ -152,8 +151,8 @@ class SettingUI(QWidget):
         form_layout.setHorizontalSpacing(12)
         form_layout.setVerticalSpacing(12)
         self.interface_combo = QComboBox()
-        self.interface_combo.addItem(self.current_text.INTERFACE_VECTOR, "vector")
-        self.interface_combo.addItem(self.current_text.INTERFACE_PCAN, "pcan")
+        for key, label in INTERFACES:
+            self.interface_combo.addItem(label, key)
         self.interface_combo.setToolTip(self.current_text.INTERFACE_HINT)
         self.interface_label = QLabel(self.current_text.INTERFACE)
         form_layout.addRow(self.interface_label, self.interface_combo)
@@ -173,6 +172,7 @@ class SettingUI(QWidget):
         form_layout.addRow(self.channel_label, self.channel_edit)
         form_layout.addRow(self.arb_label, self.arb_bitrate_edit)
         form_layout.addRow(self.data_label, self.data_bitrate_edit)
+        self.interface_combo.currentIndexChanged.connect(self._update_interface_controls)
         self.can_card.add_layout(form_layout)
 
         self.reconnect_btn = QPushButton(self.current_text.RECONNECT_CAN)
@@ -202,7 +202,7 @@ class SettingUI(QWidget):
 
     # 加载历史配置
     def load_saved_config(self):
-        interface = self.settings.value("can_interface", "vector")
+        interface = normalize_interface(self.settings.value("can_interface", "vector"))
         app_name = self.settings.value("app_name", "VectorTest")
         channel = self.settings.value("channel", 0)
         arb_bitrate = self.settings.value("arb_bitrate", 1000000)
@@ -214,6 +214,7 @@ class SettingUI(QWidget):
         self.channel_edit.setText(str(channel))
         self.arb_bitrate_edit.setText(str(arb_bitrate))
         self.data_bitrate_edit.setText(str(data_bitrate))
+        self._update_interface_controls()
         saved_language = self.settings.value("language", "zh")
         language_manager.set_language(saved_language)
 
@@ -224,7 +225,12 @@ class SettingUI(QWidget):
             app_name = self.app_name_edit.text().strip()
             channel = int(self.channel_edit.text())
             arb_bitrate = int(self.arb_bitrate_edit.text())
-            data_bitrate = int(self.data_bitrate_edit.text())
+            data_bitrate = (arb_bitrate if interface == VECTOR_VN1610
+                            else int(self.data_bitrate_edit.text()))
+            if interface != PCAN and not app_name:
+                raise ValueError('请填写在 VHM 中注册的应用名')
+            if channel < 0 or arb_bitrate <= 0 or data_bitrate <= 0:
+                raise ValueError('通道须为非负整数，波特率须为正整数')
             self.settings.setValue("can_interface", interface)
             self.settings.setValue("app_name", app_name)
             self.settings.setValue("channel", channel)
@@ -235,6 +241,18 @@ class SettingUI(QWidget):
             )
         except Exception as e:
             print(f"参数错误: {e}")
+
+    def _update_interface_controls(self):
+        interface = self.interface_combo.currentData()
+        editable = self.reconnect_btn.isEnabled()
+        self.app_name_edit.setEnabled(editable and interface != PCAN)
+        self.data_bitrate_edit.setEnabled(editable and interface != VECTOR_VN1610)
+
+    def set_can_controls_enabled(self, enabled):
+        for control in (self.interface_combo, self.app_name_edit, self.channel_edit,
+                        self.arb_bitrate_edit, self.data_bitrate_edit, self.reconnect_btn):
+            control.setEnabled(enabled)
+        self._update_interface_controls()
 
     # 语言切换
     def switch_language(self, language):

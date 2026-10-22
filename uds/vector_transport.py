@@ -28,7 +28,7 @@ class VectorTransport:
         bus.handle_can_event = self.handle_can_event
         bus.handle_canfd_event = self.handle_canfd_event
 
-    def describe(self, expected_serial=None):
+    def describe(self, expected_hw_type=None, expected_bitrate=None, require_init_access=False):
         bus = self.bus
         self.log(f"VECTOR_PORT：channel_info={bus.channel_info!r} "
                  f"mask=0x{bus.mask:X} init_access=0x{bus.permission_mask:X} "
@@ -37,17 +37,10 @@ class VectorTransport:
         selected = [cfg for cfg in configs if bus.mask & (1 << cfg.channel_index)]
         if not selected:
             raise can.CanInitializationError('未能查到已打开的 Vector 物理通道，停止刷写')
-        if expected_serial is not None:
-            if (len(selected) != 1 or selected[0].serial_number != expected_serial
-                    or int(selected[0].hw_type) != int(xldefine.XL_HardwareType.XL_HWTYPE_VN1610)
-                    or selected[0].hw_channel != 0
-                    or bus.protocol is not can.CanProtocol.CAN_20):
-                raise can.CanInitializationError(
-                    f'打开的通道不是指定 VN1610 serial={expected_serial} 的传统 CAN1，停止刷写')
-            if bus.permission_mask != bus.mask:
-                raise can.CanInitializationError(
-                    'VN1610 CAN1 正被其他客户端共享，无法独立设置 1 Mbps；'
-                    '请断开其他占用该通道的软件后重新刷写')
+        if require_init_access and bus.permission_mask != bus.mask:
+            raise can.CanInitializationError(
+                'Vector 通道正被其他客户端共享，无法独立设置波特率；'
+                '请断开其他占用该通道的软件后重新刷写')
         for cfg in selected:
             params = cfg.bus_params
             active = (params.canfd if bus.protocol is can.CanProtocol.CAN_FD else params.can) if params else None
@@ -58,12 +51,18 @@ class VectorTransport:
                      f"transceiver={cfg.transceiver_name!r} active_params={active!r}")
             if int(cfg.hw_type) == 1:
                 raise can.CanInitializationError('当前 Vector 应用映射到虚拟通道，不会发往物理 CAN，停止刷写')
+            if expected_hw_type is not None and int(cfg.hw_type) != expected_hw_type:
+                raise can.CanInitializationError(
+                    f'配置页选择的 Vector 型号与 VHM 映射设备不符：'
+                    f'expected_hw_type={expected_hw_type} actual={cfg.name!r} '
+                    f'hw_type={int(cfg.hw_type)}；请核对应用名和通道映射')
             if active and int(active.output_mode) != int(xldefine.XL_OutputMode.XL_OUTPUT_MODE_NORMAL):
                 raise can.CanInitializationError(
                     f'Vector 通道输出模式为 {active.output_mode!r}，不是 NORMAL；'
                     '请检查占用通道的软件及 Vector 硬件配置')
-            if expected_serial is not None and (active is None or active.bitrate != 1000000):
-                raise can.CanInitializationError('VN1610 CAN1 的活动波特率不是 1 Mbps，停止刷写')
+            if expected_bitrate is not None and (active is None or active.bitrate != expected_bitrate):
+                raise can.CanInitializationError(
+                    f'Vector 活动波特率与配置不符：expected={expected_bitrate} actual={active!r}，停止刷写')
         if bus.permission_mask != bus.mask:
             self.log('VECTOR_SHARED_CHANNEL：未获得全部通道初始化权限，当前参数由其他客户端共享；详见 active_params')
 

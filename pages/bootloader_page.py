@@ -1,4 +1,4 @@
-from PySide6.QtCore import Qt, QThread, Signal
+from PySide6.QtCore import Qt, QThread, Signal, QSettings
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import (
     QWidget,
@@ -18,6 +18,7 @@ import time
 from datetime import datetime
 
 from uds.uds_flasher import UDSFlasher
+from can_config import VECTOR_VN1610, normalize_interface
 import theme
 
 # 中文
@@ -45,9 +46,6 @@ class UITextCN:
     MONITOR_START = "开始监听报文"
     MONITOR_STOP = "停止监听"
     FD_MODE = "CAN-FD 模式"
-    VN1610 = "使用 VN1610（26774）"
-    VN1610_INFO = "物理 CAN1 · 1 Mbps · 传统 CAN"
-    SETTINGS_CAN = "使用配置管理中的 CAN 参数"
 
 # English
 class UITextEN:
@@ -74,15 +72,11 @@ class UITextEN:
     MONITOR_START = "Start Monitor"
     MONITOR_STOP = "Stop Monitor"
     FD_MODE = "CAN-FD Mode"
-    VN1610 = "Use VN1610 (26774)"
-    VN1610_INFO = "Physical CAN1 · 1 Mbps · Classic CAN"
-    SETTINGS_CAN = "Use CAN parameters from Settings"
 
 class BootloaderPage(QWidget):
     starting_flash = Signal()
     finished_flash = Signal(bool)
     current_ui = UITextCN
-    VN1610_SERIAL = 26774
 
     def __init__(self):
         super().__init__()
@@ -96,6 +90,7 @@ class BootloaderPage(QWidget):
         self.monitoring = False
         self._last_monitor_ts = 0.0
         self.setup_ui()
+        self.refresh_can_config()
 
     # UI
     def setup_ui(self):
@@ -147,17 +142,8 @@ class BootloaderPage(QWidget):
         self.progress = QProgressBar()
         self.progress.setValue(0)
         self.flash_card.add_widget(self.progress)
-        self.vn1610_checkbox = QCheckBox(self.current_ui.VN1610)
-        self.vn1610_checkbox.setChecked(True)
-        self.vn1610_checkbox.toggled.connect(self._update_interface_controls)
-        self.flash_card.add_widget(self.vn1610_checkbox)
-        self.interface_info = QLabel(self.current_ui.VN1610_INFO)
-        self.interface_info.setWordWrap(True)
-        self.interface_info.setStyleSheet("color:#5b6472; font-size:12px;")
-        self.flash_card.add_widget(self.interface_info)
         self.fd_checkbox = QCheckBox(self.current_ui.FD_MODE)
         self.fd_checkbox.setChecked(False)
-        self.fd_checkbox.setEnabled(False)
         self.flash_card.add_widget(self.fd_checkbox)
         self.start_btn = QPushButton(self.current_ui.START_FLASH)
         self.start_btn.setObjectName("PrimaryButton")
@@ -191,8 +177,6 @@ class BootloaderPage(QWidget):
         self.file_btn.setText(ui.SELECT_BIN_FILE)
         self.log_checkbox.setText(ui.SAVE_CAN_LOG)
         self.fd_checkbox.setText(ui.FD_MODE)
-        self.vn1610_checkbox.setText(ui.VN1610)
-        self._update_interface_controls()
         self.start_btn.setText(ui.START_FLASH)
         self.monitor_btn.setText(
             ui.MONITOR_STOP if self.monitoring else ui.MONITOR_START
@@ -242,13 +226,12 @@ class BootloaderPage(QWidget):
                 f"{self.current_ui.FILE_SIZE}：{self.current_ui.FILE_SIZE_READ_FAILED}"
             )
 
-    def _update_interface_controls(self):
-        dedicated = self.vn1610_checkbox.isChecked()
-        if dedicated:
+    def refresh_can_config(self):
+        settings = QSettings('BatteryMonitor', 'CANConfig')
+        classic_only = normalize_interface(settings.value('can_interface', 'vector')) == VECTOR_VN1610
+        if classic_only:
             self.fd_checkbox.setChecked(False)
-        self.interface_info.setText(self.current_ui.VN1610_INFO if dedicated
-                                    else self.current_ui.SETTINGS_CAN)
-        self.fd_checkbox.setEnabled(not dedicated and self._flash_thread is None)
+        self.fd_checkbox.setEnabled(not classic_only and self._flash_thread is None)
 
     # 开始刷写
     def start_flash(self):
@@ -257,8 +240,7 @@ class BootloaderPage(QWidget):
         if not self.bin_file:
             self.log_text.append(self.current_ui.PLEASE_SELECT_BIN)
             return
-        for control in (self.start_btn, self.file_btn, self.fd_checkbox, self.log_checkbox,
-                        self.vn1610_checkbox):
+        for control in (self.start_btn, self.file_btn, self.fd_checkbox, self.log_checkbox):
             control.setEnabled(False)
         self.progress.setValue(0)
         self.log_text.clear()
@@ -269,8 +251,7 @@ class BootloaderPage(QWidget):
             self.flasher = UDSFlasher(
                 self.bin_file,
                 self.log_checkbox.isChecked(),
-                self.fd_checkbox.isChecked(),
-                vn1610_serial=self.VN1610_SERIAL if self.vn1610_checkbox.isChecked() else None
+                self.fd_checkbox.isChecked()
             )
             self.flasher.moveToThread(self._flash_thread)
             self._flash_thread.started.connect(self.flasher.flash)
@@ -294,9 +275,9 @@ class BootloaderPage(QWidget):
             self._flash_thread = None
             self.flasher = None
             thread.deleteLater()
-        for control in (self.start_btn, self.file_btn, self.log_checkbox, self.vn1610_checkbox):
+        for control in (self.start_btn, self.file_btn, self.log_checkbox):
             control.setEnabled(True)
-        self._update_interface_controls()
+        self.refresh_can_config()
         self.current_stage_text = (
             "Success" if success else "Failed"
         )

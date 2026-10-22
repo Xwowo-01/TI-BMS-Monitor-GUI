@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 os.environ.setdefault('QT_QPA_PLATFORM', 'offscreen')
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from PySide6.QtCore import QObject, QThread, Signal, Slot
+from PySide6.QtCore import QObject, QThread, Signal, Slot, QSettings
 from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication
 import pages.bootloader_page as module
@@ -46,6 +46,12 @@ class BootloaderPageTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.bin_file = Path(self.temp.name) / 'firmware.bin'
         self.bin_file.write_bytes(bytes(range(16)))
+        self.settings = QSettings(str(Path(self.temp.name) / 'can.ini'), QSettings.IniFormat)
+        self.settings.setValue('can_interface', 'vector_vn1630a')
+        for name in ('pages.bootloader_page.QSettings', 'uds.uds_flasher.QSettings'):
+            item = patch(name, return_value=self.settings)
+            item.start()
+            self.addCleanup(item.stop)
         self.page = module.BootloaderPage()
         self.addCleanup(self.page.close)
         self.results = []
@@ -62,8 +68,7 @@ class BootloaderPageTests(unittest.TestCase):
         self.assertTrue(self.page.start_btn.isEnabled())
         self.assertTrue(self.page.file_btn.isEnabled())
         self.assertEqual(self.page.fd_checkbox.isEnabled(),
-                         not self.page.vn1610_checkbox.isChecked())
-        self.assertTrue(self.page.vn1610_checkbox.isEnabled())
+                         self.settings.value('can_interface') != 'vector_vn1610')
         self.assertTrue(self.page.log_checkbox.isEnabled())
         self.assertTrue(callable(self.page.thread))
         self.assertEqual(self.page.thread(), QThread.currentThread())
@@ -80,7 +85,7 @@ class BootloaderPageTests(unittest.TestCase):
         with patch.object(module, 'UDSFlasher', return_value=worker) as factory:
             self.page.start_btn.click()
             self.wait_for(lambda: len(self.results) == 1)
-        factory.assert_called_once_with(str(self.bin_file), True, False, vn1610_serial=26774)
+        factory.assert_called_once_with(str(self.bin_file), True, False)
         self.assertEqual(self.results, [True])
         self.assert_idle()
 
@@ -132,25 +137,23 @@ class BootloaderPageTests(unittest.TestCase):
         self.assertIn('simulated missing hardware', self.page.log_text.toPlainText())
         self.assert_idle()
 
-    def test_vn1610_profile_cannot_accidentally_enable_fd(self):
+    def test_vn1610_from_settings_disables_fd_without_model_control_on_flash_page(self):
         self.assertTrue(self.page.log_checkbox.isChecked())
-        self.assertTrue(self.page.vn1610_checkbox.isChecked())
-        self.assertFalse(self.page.fd_checkbox.isEnabled())
-        self.page.vn1610_checkbox.setChecked(False)
+        self.assertFalse(hasattr(self.page, 'vn1610_checkbox'))
         self.page.fd_checkbox.setChecked(True)
-        self.page.vn1610_checkbox.setChecked(True)
+        self.settings.setValue('can_interface', 'vector_vn1610')
+        self.page.refresh_can_config()
         self.assertFalse(self.page.fd_checkbox.isChecked())
         self.assertFalse(self.page.fd_checkbox.isEnabled())
 
-    def test_unchecked_profile_preserves_settings_mode(self):
+    def test_vn1630a_keeps_optional_fd_mode(self):
         worker = FakeFlasher(result=False)
         self.page.bin_file = str(self.bin_file)
-        self.page.vn1610_checkbox.setChecked(False)
         self.page.fd_checkbox.setChecked(True)
         with patch.object(module, 'UDSFlasher', return_value=worker) as factory:
             self.page.start_btn.click()
             self.wait_for(lambda: len(self.results) == 1)
-        factory.assert_called_once_with(str(self.bin_file), True, True, vn1610_serial=None)
+        factory.assert_called_once_with(str(self.bin_file), True, True)
         self.assert_idle()
 
 

@@ -26,6 +26,12 @@ class VectorBoundaryTests(unittest.TestCase):
         self.calls = []
         self.accepted = 1
         self.error = None
+        self.settings_values = {'can_interface': 'vector_vn1630a'}
+        settings = Mock()
+        settings.value.side_effect = lambda key, default=None: self.settings_values.get(key, default)
+        item = patch('uds.uds_flasher.QSettings', return_value=settings)
+        item.start()
+        self.addCleanup(item.stop)
         # Deliberately skip __init__: every XL entry point is replaced by a
         # Python fake, while the actual python-can send/packing methods run.
         self.bus = object.__new__(VectorBus)
@@ -231,33 +237,33 @@ class VectorBoundaryTests(unittest.TestCase):
         self.bus.xldriver.xlCanRequestChipState.assert_called_once()
 
     def test_pcan_setting_cannot_silently_send_to_vector(self):
-        fake_settings = Mock()
-        fake_settings.value.return_value = 'pcan'
-        with patch('uds.uds_flasher.QSettings', return_value=fake_settings), \
-                patch('can.interface.Bus') as factory:
+        self.settings_values['can_interface'] = 'pcan'
+        flasher = UDSFlasher('unused.bin')
+        with patch('can.interface.Bus') as factory:
             with self.assertRaisesRegex(ValueError, 'pcan'):
-                self.flasher.create_bus()
+                flasher.create_bus()
         factory.assert_not_called()
 
-    def test_vn1610_binds_serial_and_physical_can1_ignoring_monitor_settings(self):
+    def test_vn1610_uses_saved_app_channel_and_bitrate_without_fixed_serial(self):
         cfg = self.config(hw_type=55)
-        cfg.serial_number = 26774
-        cfg.hw_channel = 0
-        with patch('uds.uds_flasher.QSettings', side_effect=AssertionError('Must not read monitor settings')):
-            flasher = UDSFlasher('unused.bin', fd=True, vn1610_serial=26774)
-            with patch('can.interface.Bus', return_value=self.bus) as factory, \
-                    patch('uds.vector_transport.get_channel_configs', return_value=[cfg]), \
-                    patch.object(flasher, '_start_rx'):
-                flasher.create_bus()
+        cfg.serial_number = 98765
+        cfg.bus_params.can.bitrate = 500000
+        self.settings_values.update(can_interface='vector_vn1610', app_name='BMS1610',
+                                    channel=1, arb_bitrate=500000)
+        flasher = UDSFlasher('unused.bin', fd=True)
+        with patch('can.interface.Bus', return_value=self.bus) as factory, \
+                patch('uds.vector_transport.get_channel_configs', return_value=[cfg]), \
+                patch.object(flasher, '_start_rx'):
+            flasher.create_bus()
         kwargs = factory.call_args.kwargs
-        self.assertEqual((kwargs['serial'], kwargs['app_name'], kwargs['channel'],
-                          kwargs['bitrate'], kwargs['fd']), (26774, None, 0, 1000000, False))
+        self.assertEqual((kwargs['app_name'], kwargs['channel'], kwargs['bitrate'], kwargs['fd']),
+                         ('BMS1610', 1, 500000, False))
+        self.assertNotIn('serial', kwargs)
         self.assertTrue(kwargs['ignore_config'])
         self.assertNotIn('data_bitrate', kwargs)
 
-    def test_vn1610_profile_rejects_other_card_port_or_bitrate(self):
-        for field, wrong in (('serial_number', 540982), ('hw_type', 57),
-                             ('hw_channel', 1), ('bitrate', 500000)):
+    def test_configured_model_and_bitrate_reject_wrong_vhm_mapping(self):
+        for field, wrong in (('hw_type', 57), ('hw_type', 1), ('bitrate', 500000)):
             cfg = self.config(hw_type=55)
             cfg.serial_number, cfg.hw_channel = 26774, 0
             if field == 'bitrate':
@@ -267,7 +273,7 @@ class VectorBoundaryTests(unittest.TestCase):
             with self.subTest(field=field), \
                     patch('uds.vector_transport.get_channel_configs', return_value=[cfg]):
                 with self.assertRaises(can.CanInitializationError):
-                    self.transport.describe(expected_serial=26774)
+                    self.transport.describe(expected_hw_type=55, expected_bitrate=1000000)
         self.assertEqual(self.calls, [])
 
     def test_vn1610_profile_requires_initialization_permission(self):
@@ -276,15 +282,17 @@ class VectorBoundaryTests(unittest.TestCase):
         self.bus.permission_mask = 0
         with patch('uds.vector_transport.get_channel_configs', return_value=[cfg]):
             with self.assertRaisesRegex(can.CanInitializationError, '共享'):
-                self.transport.describe(expected_serial=26774)
+                self.transport.describe(expected_hw_type=55, require_init_access=True)
 
     def test_disconnected_vn1610_never_falls_back_to_application_or_other_card(self):
-        flasher = UDSFlasher('unused.bin', vn1610_serial=26774)
+        self.settings_values.update(can_interface='vector_vn1610', app_name='BMS1610')
+        flasher = UDSFlasher('unused.bin')
         with patch('can.interface.Bus', side_effect=can.CanInitializationError('not found')) as factory:
             with self.assertRaises(can.CanInitializationError):
                 flasher.create_bus()
         factory.assert_called_once()
-        self.assertEqual(factory.call_args.kwargs['serial'], 26774)
+        self.assertEqual(factory.call_args.kwargs['app_name'], 'BMS1610')
+        self.assertNotIn('serial', factory.call_args.kwargs)
         self.assertIsNone(flasher.bus)
 
     def test_state_events_before_response_are_drained_without_waiting(self):
@@ -334,7 +342,8 @@ class VectorBoundaryTests(unittest.TestCase):
             firmware = bytes(range(256)) * 32
             path = Path(directory) / 'firmware.bin'
             path.write_bytes(firmware)
-            flasher = UDSFlasher(str(path), vn1610_serial=26774)
+            self.settings_values['can_interface'] = 'vector_vn1610'
+            flasher = UDSFlasher(str(path))
             ecu = SimulatedECU(flasher, threaded=True, bs=8, multi_response=True)
             cfg = self.config(hw_type=55)
             cfg.serial_number, cfg.hw_channel = 26774, 0

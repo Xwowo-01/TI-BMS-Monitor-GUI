@@ -260,12 +260,14 @@ class MainWindow(QWidget):
 
     # Bootloader 刷写前后 CAN 处理
     def stop_can_for_flash(self):
+        self.setting_page.set_can_controls_enabled(False)
         if self.can_receiver:
             self.can_receiver.stop()
             self.can_receiver = None
             print("CAN 接收已停止，为刷写释放资源")
 
     def restart_can_after_flash(self, success):
+        self.setting_page.set_can_controls_enabled(True)
         if success:
             dbc_path = self.dbc_path
             try:
@@ -517,6 +519,10 @@ class MainWindow(QWidget):
             arb_bitrate,
             data_bitrate
     ):
+        if self.bootloader_page._flash_thread is not None:
+            print('刷写期间不能重新连接 CAN')
+            return
+        self.bootloader_page.refresh_can_config()
         print("开始重新连接 CAN...")
         if self.can_receiver:
             self.can_receiver.stop()
@@ -548,6 +554,25 @@ if __name__ == "__main__":
     smoke_test = '--startup-smoke-test' in sys.argv
     if smoke_test:
         os.environ['QT_QPA_PLATFORM'] = 'offscreen'
+        import tempfile
+        from pathlib import Path
+        smoke_target = Path(sys.argv[sys.argv.index('--startup-smoke-test') + 1])
+        smoke_target.parent.mkdir(parents=True, exist_ok=True)
+        smoke_settings = tempfile.TemporaryDirectory(prefix='startup-settings-', dir=smoke_target.parent)
+        _settings_class = QSettings
+
+        def isolated_settings(*args, **kwargs):
+            return _settings_class(str(Path(smoke_settings.name) / 'can.ini'), _settings_class.IniFormat)
+
+        # Explicit organization/application constructors use the native format;
+        # setDefaultFormat alone does not isolate them from the user's registry.
+        import pages.setting as settings_module
+        import pages.bootloader_page as bootloader_module
+        import uds.uds_flasher as flasher_module
+        QSettings = isolated_settings
+        settings_module.QSettings = isolated_settings
+        bootloader_module.QSettings = isolated_settings
+        flasher_module.QSettings = isolated_settings
     app = QApplication(sys.argv)
     app.setStyleSheet(theme.APP_STYLESHEET)
     w = MainWindow(connect_can=not smoke_test)
@@ -585,6 +610,9 @@ if __name__ == "__main__":
                 'can_connected': w.can_receiver is not None,
                 'loaded_modules': modules,
                 'bootloader_button_checks': smoke_checks,
+                'can_interface_choices': [w.setting_page.interface_combo.itemData(index)
+                                          for index in range(w.setting_page.interface_combo.count())],
+                'bootloader_has_model_control': hasattr(w.bootloader_page, 'vn1610_checkbox'),
             }, ensure_ascii=False, indent=2), encoding='utf-8')
             app.quit()
 
@@ -599,6 +627,11 @@ if __name__ == "__main__":
                 and callable(page.thread) and page._flash_thread is None)
             original_bus = can.interface.Bus
             bus_calls = []
+
+            # Verify the settings-selected model reaches the real worker, with
+            # a rejecting factory that can never open a physical CAN channel.
+            w.setting_page.settings.setValue('can_interface', 'vector_vn1610')
+            page.refresh_can_config()
 
             def reject_hardware(**kwargs):
                 bus_calls.append(kwargs)

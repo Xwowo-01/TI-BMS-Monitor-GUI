@@ -7,6 +7,7 @@ import platform
 from datetime import datetime
 
 import can
+from can_config import VECTOR_VN1610, PCAN, interface_name, normalize_interface, vector_hw_type
 from PySide6.QtCore import (
     QObject,
     Signal,
@@ -81,7 +82,7 @@ class UDSFlasher(QObject):
     SUB_MATCH_SIDS = (0x10, 0x11, 0x27, 0x28, 0x31, 0x36, 0x37, 0x3E, 0x85)
 
     # INIT
-    def __init__(self, bin_file, save_log=False, fd=False, *, vn1610_serial=None):
+    def __init__(self, bin_file, save_log=False, fd=False):
         super().__init__()
         self.bin_file = bin_file
         self.save_log = save_log
@@ -90,7 +91,6 @@ class UDSFlasher(QObject):
         self.log_file = None
         self.bus = None
         self._transport = None
-        self.vn1610_serial = vn1610_serial
 
         # ---- 流式接收架构：后台线程持续收帧，组包后放进收件箱 ----
         self._lock = threading.Lock()
@@ -123,22 +123,14 @@ class UDSFlasher(QObject):
         self.stats = dict(tx=0, tx_failed=0, tx_completed=0, rx=0, error_frames=0, driver_errors=0,
                           max_rx_lag_ms=0.0, max_cf_gap_ms=0.0)
 
-        # Dedicated VN1610 profile: physical CAN1, independent of application
-        # mappings and monitor settings. Never fall back to a different card.
-        if vn1610_serial is not None:
-            if type(vn1610_serial) is not int or vn1610_serial <= 0:
-                raise ValueError('VN1610 序列号必须为正整数')
-            self.vector_app_name = None
-            self.channel = 0
-            self.bitrate = self.data_bitrate = 1000000
-            self.fd = False
-            return
-
         # 读取用户保存的 CAN 配置
         settings = QSettings(
             "BatteryMonitor",
             "CANConfig"
         )
+        self.interface = normalize_interface(settings.value('can_interface', 'vector'))
+        if self.interface == VECTOR_VN1610:
+            self.fd = False
         self.vector_app_name = settings.value(
             "app_name",
             "VectorTest"
@@ -254,12 +246,9 @@ class UDSFlasher(QObject):
     def create_bus(self):
         from uds.vector_transport import VectorTransport
 
-        if self.vn1610_serial is None:
-            settings = QSettings('BatteryMonitor', 'CANConfig')
-            interface = settings.value('can_interface', 'vector')
-            if interface != 'vector':
-                raise ValueError(f'Bootloader 当前发送实现使用 Vector，但设置选择了 {interface}；'
-                                 '请先选择并配置 Vector，停止向其他接口误发')
+        if self.interface == PCAN:
+            raise ValueError('Bootloader 当前发送实现使用 Vector，但设置选择了 pcan；'
+                             '请先选择并配置 Vector，停止向其他接口误发')
         kwargs = dict(
             interface='vector',
             channel=self.channel,
@@ -275,15 +264,16 @@ class UDSFlasher(QObject):
                           'can_mask': 0x7FF ^ (self.RX_ID ^ self.TX_ID),
                           'extended': False}],
         )
-        if self.vn1610_serial is not None:
-            kwargs['serial'] = self.vn1610_serial
-            self.log(f'BOOTLOADER_PROFILE：VN1610 serial={self.vn1610_serial} '
-                     'physical_port=1 bitrate=1000000 Classic CAN；直接选择硬件，不使用应用映射')
+        self.log(f'BOOTLOADER_PROFILE：{interface_name(self.interface)} '
+                 f'app={self.vector_app_name!r} logical_channel={self.channel} '
+                 f'bitrate={self.bitrate} FD={self.fd}；使用配置管理中的 CAN 参数')
         if self.fd:
             kwargs['data_bitrate'] = self.data_bitrate
         self.bus = can.interface.Bus(**kwargs)
         self._transport = VectorTransport(self.bus, self.log)
-        self._transport.describe(expected_serial=self.vn1610_serial)
+        self._transport.describe(expected_hw_type=vector_hw_type(self.interface),
+                                 expected_bitrate=self.bitrate,
+                                 require_init_access=self.interface == VECTOR_VN1610)
         self.log(
             f"CAN 初始化成功 "
             f"(App={self.vector_app_name}, "
@@ -909,7 +899,7 @@ class UDSFlasher(QObject):
                                                     name="UDS-LOG", daemon=True)
                 self._log_thread.start()
                 self.log(f"完整日志文件：{os.path.abspath(filename)}")
-            self.log(f"BOOTLOADER_REV=2026-10-21-vn1610-v5 Python={platform.python_version()} "
+            self.log(f"BOOTLOADER_REV=2026-10-22-can-model-v6 Python={platform.python_version()} "
                      f"python-can={can.__version__} OS={platform.platform()}")
             self.log("日志说明：TX_QUEUED 表示 Vector 驱动已接受 1 帧；TX_COMPLETED 为驱动报告的发送完成回执，"
                      "均不代表 ECU 已执行 UDS 请求；"

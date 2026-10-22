@@ -59,7 +59,7 @@ def prepare_vector_dll():
     return None
 
 
-def ensure_vector_application(app_name, channel=0):
+def ensure_vector_application(app_name, channel=0, hw_type=None):
     """确保 Vector Hardware Config 中存在名为 app_name 的应用。
 
     - 已存在：直接返回 True。
@@ -69,6 +69,7 @@ def ensure_vector_application(app_name, channel=0):
 
     :param app_name: Vector 应用名（对应 UI 中的“应用名”设置）。
     :param channel: 应用内的通道序号（0 起，对应 UI 中的“通道”设置）。
+    :param hw_type: 可选的目标硬件型号，自动创建时只选择该型号。
     """
     import can as _can
     from can.interfaces.vector import VectorBus
@@ -85,10 +86,11 @@ def ensure_vector_application(app_name, channel=0):
 
     # 排除虚拟通道，优先实体硬件
     physical = [c for c in configs if c.get("hw_type") != _HWTYPE_VIRTUAL]
-    pool = physical or configs
+    pool = ([c for c in physical if c.get('hw_type') == hw_type]
+            if hw_type is not None else physical or configs)
     if not pool:
         raise RuntimeError(
-            f"未检测到 Vector CAN 硬件，无法自动创建应用 '{app_name}'。"
+            f"未检测到所选 Vector CAN 硬件（hw_type={hw_type}），无法自动创建应用 '{app_name}'。"
             "请确认已安装 Vector 驱动且硬件已连接。"
         )
 
@@ -109,3 +111,16 @@ def ensure_vector_application(app_name, channel=0):
         hw_channel=cfg["hw_channel"],
     )
     return True
+
+
+def check_vector_hardware(bus, expected_hw_type):
+    """Reject a stale VHM mapping before monitoring or EIS can send frames."""
+    import can
+    from can.interfaces.vector.canlib import get_channel_configs
+
+    selected = [cfg for cfg in get_channel_configs() if bus.mask & (1 << cfg.channel_index)]
+    if len(selected) != 1 or any(int(cfg.hw_type) != expected_hw_type for cfg in selected):
+        actual = [(cfg.name, int(cfg.hw_type), cfg.serial_number) for cfg in selected]
+        raise can.CanInitializationError(
+            f'配置页选择的 Vector 型号与 VHM 映射设备不符：'
+            f'expected_hw_type={expected_hw_type} actual={actual!r}；请核对应用名和通道映射')
