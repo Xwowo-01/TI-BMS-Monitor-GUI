@@ -1,0 +1,14 @@
+# Local Python environment and caches
+/.venv/
+__pycache__/
+*.py[cod]
+
+# Generated applications and intermediate build files
+/build/
+/dist/
+
+# Local IDE configuration and runtime logs
+/.idea/
+canlog_*.txt
+*.log
+/TestPy/_stream_test_fw.bin
