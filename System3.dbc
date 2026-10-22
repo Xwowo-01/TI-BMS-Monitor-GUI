@@ -39,6 +39,9 @@ BU_: ApplicationECU TestECU
 BO_ 3221225472 VECTOR__INDEPENDENT_SIG_MSG: 0 Vector__XXX
  SG_ CellTemp24 : 0|8@0- (0.5,-30) [-30|80] "¡æ" Vector__XXX
 
+BO_ 17 EIS_Start_Rx: 8 Vector__XXX
+ SG_ EIS_Start : 7|1@0+ (1,0) [0|0] ""  ApplicationECU
+
 BO_ 442 CPU_UASGE: 8 ApplicationECU
  SG_ CPUNum : 7|4@0+ (1,0) [0|3] "" Vector__XXX
  SG_ CPU_USE : 3|8@0+ (1,0) [0|100] "%" Vector__XXX
@@ -106,7 +109,7 @@ BO_ 437 BMS_CellVoltage: 64 ApplicationECU
  SG_ CellVoltage8 : 143|16@0+ (1,0) [0|5500] "mV" Vector__XXX
  SG_ CellVoltage7 : 127|16@0+ (1,0) [0|5500] "mV" Vector__XXX
  SG_ CellVoltage6 : 111|16@0+ (1,0) [0|5500] "mV" Vector__XXX
- SG_ CellVoltage5 : 88|16@1+ (1,0) [0|5500] "mV" Vector__XXX
+ SG_ CellVoltage5 : 95|16@0+ (1,0) [0|5500] "mV" Vector__XXX
  SG_ CellVoltage4 : 79|16@0+ (1,0) [0|5500] "mV" Vector__XXX
  SG_ CellVoltage3 : 63|16@0+ (1,0) [0|5500] "mV" Vector__XXX
  SG_ CellVoltage26 : 431|16@0+ (1,0) [0|5500] "mV" Vector__XXX
@@ -311,8 +314,8 @@ BA_DEF_DEF_  "GenMsgSendType" "Cyclic";
 BA_DEF_DEF_  "GenSigInactiveValue" 0;
 BA_DEF_DEF_  "GenSigSendType" "Cyclic";
 BA_DEF_DEF_  "GenSigStartValue" 0;
-BA_ "BusType" "CAN FD";
 BA_ "SamplePointMax" 81.4;
+BA_ "BusType" "CAN FD";
 BA_ "VFrameFormat" BO_ 442 14;
 BA_ "GenMsgCycleTime" BO_ 515 10;
 BA_ "VFrameFormat" BO_ 515 14;

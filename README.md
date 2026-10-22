@@ -60,6 +60,8 @@ CAN 卡统一在配置管理页选择，刷写页不再提供独立的 VN1610 �
 
 旧版本只保存 `Vector` 的配置会兼容显示为 `Vector VN1630A`，原有应用名、通道和波特率保留；实际使用 VN1610 时需重新选择 `Vector VN1610` 并重连。
 
+项目中的固件保留原路径 `F29_MCAL_src.bin`，当前内容更新自 `F29H85X_RTA-SK.bin`。打包程序随带 `System3.dbc`，不随带 BIN；刷写时自行选择对应固件。
+
 ## 本地开发
 
 当前已验证的环境为 Windows、Python 3.12.1、PySide6 6.10.1、python-can 4.6.1 和 PyInstaller 6.18.0。程序还使用 cantools 和 pyqtgraph。入口为 `Main.py`。

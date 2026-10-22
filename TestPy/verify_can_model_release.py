@@ -27,6 +27,9 @@ def dlls(directory):
 def main():
     release = root / 'dist/BootloaderFix_20261022_v6/BatteryMonitor'
     assert sorted(path.name for path in release.iterdir()) == ['BatteryMonitor.exe', '_internal']
+    assert not list(release.rglob('*.bin')), 'This package did not previously include firmware'
+    dbc_sha256 = hashlib.sha256((root / 'System3.dbc').read_bytes()).hexdigest()
+    assert hashlib.sha256((release / '_internal/System3.dbc').read_bytes()).hexdigest() == dbc_sha256
     exe = release / 'BatteryMonitor.exe'
     archive = CArchiveReader(str(exe))
     pyz = archive.open_embedded_archive(next(name for name in archive.toc if name.endswith('.pyz')))
@@ -50,6 +53,7 @@ def main():
                   embedded_sources=list(names), startup=report, unchanged_dlls=len(dlls(release)),
                   package_entries=[path.name for path in release.iterdir()],
                   exe_sha256=hashlib.sha256(exe.read_bytes()).hexdigest(),
+                  dbc_sha256=dbc_sha256,
                   hardware_full_flash=False)
     (root / 'build/release-verification-v6.json').write_text(
         json.dumps(result, ensure_ascii=False, indent=2), encoding='utf-8')
